@@ -4,7 +4,7 @@ const express_1 = require("express");
 const question_controller_1 = require("../controllers/question.controller");
 const auth_1 = require("../middlewares/auth");
 const router = (0, express_1.Router)();
-router.get('/', question_controller_1.getAllQuestions);
+router.get('/', auth_1.authenticate, auth_1.requireAdmin, question_controller_1.getAllQuestions);
 router.post('/', auth_1.authenticate, auth_1.requireAdmin, question_controller_1.addQuestion);
 router.delete('/:id', auth_1.authenticate, auth_1.requireAdmin, question_controller_1.deleteQuestion);
 exports.default = router;

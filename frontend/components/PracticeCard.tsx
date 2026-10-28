@@ -13,11 +13,15 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({ practice }) => {
   const { startTestById, showToast } = useApp();
 
   const handleStart = () => {
-    startTestById();
+    if (practice.testId) void startTestById(practice.testId);
+    else showToast('This practice set has no online test yet.', 'info');
   };
 
   const handleDownload = () => {
-    showToast(`"${practice.title}" का PDF डाउनलोड प्रारंभ हो रहा है...`, 'success');
+    if (!practice.pdfUrl) { showToast('PDF is not available yet.', 'info'); return; }
+    const url = new URL(practice.pdfUrl, window.location.origin);
+    if (!['http:', 'https:'].includes(url.protocol)) { showToast('Invalid PDF link.', 'error'); return; }
+    window.open(url.href, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -53,6 +57,7 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({ practice }) => {
 
         <button
           onClick={handleDownload}
+          disabled={!practice.pdfUrl}
           className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors border border-slate-200"
           title="Download PDF Paper"
         >
@@ -61,10 +66,11 @@ export const PracticeCard: React.FC<PracticeCardProps> = ({ practice }) => {
 
         <button
           onClick={handleStart}
+          disabled={!practice.testId}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0966df] hover:bg-[#0b55bb] text-white text-xs font-bold rounded-lg shadow-xs hover:shadow-sm transition-all"
         >
           <PlayCircle className="w-3.5 h-3.5" />
-          <span>Start Test</span>
+          <span>{practice.testId ? 'Start Test' : 'Coming soon'}</span>
         </button>
       </div>
     </div>

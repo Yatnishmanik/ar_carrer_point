@@ -13,45 +13,57 @@ export const addQuestion = async (req: Request, res: Response, next: NextFunctio
       options, // array of { text: string, isCorrect: boolean }
     } = req.body;
 
-    if (!questionText || !options || !Array.isArray(options) || options.length < 2) {
+    if (typeof questionText !== 'string' || !questionText.trim() ||
+        (testId !== undefined && typeof testId !== 'string') ||
+        (subject !== undefined && typeof subject !== 'string') ||
+        (explanation !== undefined && typeof explanation !== 'string') ||
+        typeof marks !== 'number' || !Number.isFinite(marks) || marks <= 0 ||
+        typeof negativeMarks !== 'number' || !Number.isFinite(negativeMarks) || negativeMarks < 0 ||
+        !Array.isArray(options) || options.length < 2 ||
+        options.some(opt => !opt || typeof opt.text !== 'string' || !opt.text.trim() || typeof opt.isCorrect !== 'boolean') ||
+        options.filter(opt => opt.isCorrect).length !== 1) {
       return res.status(400).json({
         success: false,
-        message: 'Question text and at least 2 options are required',
+        message: 'Provide a question, positive marks, non-negative penalty, and at least two options with exactly one correct answer.',
       });
     }
 
-    const createdQuestion = await prisma.question.create({
-      data: {
-        testId: testId || null,
-        questionText: questionText.trim(),
-        subject: subject ? subject.trim() : null,
-        explanation: explanation ? explanation.trim() : null,
-        marks: Number(marks),
-        negativeMarks: Number(negativeMarks),
-        options: {
-          create: options.map((opt: { text: string; isCorrect: boolean }, index: number) => ({
-            text: opt.text.trim(),
-            isCorrect: Boolean(opt.isCorrect),
-            order: index,
-          })),
-        },
-      },
-      include: {
-        options: true,
-      },
-    });
-
-    // Update parent test's totalMarks if associated with a test
-    if (testId) {
-      await prisma.test.update({
-        where: { id: testId },
+    const createdQuestion = await prisma.$transaction(async tx => {
+      const created = await tx.question.create({
         data: {
-          totalMarks: {
-            increment: Number(marks),
+          testId: testId || null,
+          questionText: questionText.trim(),
+          subject: subject ? subject.trim() : null,
+          explanation: explanation ? explanation.trim() : null,
+          marks: Number(marks),
+          negativeMarks: Number(negativeMarks),
+          options: {
+            create: options.map((opt: { text: string; isCorrect: boolean }, index: number) => ({
+              text: opt.text.trim(),
+              isCorrect: Boolean(opt.isCorrect),
+              order: index,
+            })),
           },
         },
+        include: {
+          options: true,
+        },
       });
-    }
+
+      // Update parent test's totalMarks if associated with a test
+      if (testId) {
+        await tx.test.update({
+          where: { id: testId },
+          data: {
+            totalMarks: {
+              increment: Number(marks),
+            },
+          },
+        });
+      }
+
+      return created;
+    });
 
     return res.status(201).json({
       success: true,
@@ -68,32 +80,13 @@ export const deleteQuestion = async (req: Request, res: Response, next: NextFunc
     const rawId = req.params.id;
     const id = String(Array.isArray(rawId) ? rawId[0] : rawId);
 
-    const existing = await prisma.question.findUnique({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      const existing = await tx.question.findUnique({ where: { id }, include: { _count: { select: { userAnswers: true } } } });
+      if (!existing) throw Object.assign(new Error('Question not found'), { status: 404 });
+      if (existing._count.userAnswers) throw Object.assign(new Error('Questions used in submitted tests cannot be deleted.'), { status: 409 });
+      await tx.question.delete({ where: { id } });
+      if (existing.testId) await tx.test.update({ where: { id: existing.testId }, data: { totalMarks: { decrement: existing.marks } } });
     });
-
-    if (!existing) {
-      return res.status(404).json({
-        success: false,
-        message: 'Question not found',
-      });
-    }
-
-    await prisma.question.delete({
-      where: { id },
-    });
-
-    // Deduct marks if attached to test
-    if (existing.testId) {
-      await prisma.test.update({
-        where: { id: existing.testId },
-        data: {
-          totalMarks: {
-            decrement: existing.marks,
-          },
-        },
-      });
-    }
 
     return res.status(200).json({
       success: true,

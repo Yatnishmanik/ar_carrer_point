@@ -14,7 +14,7 @@ export const getExams = async (req: Request, res: Response, next: NextFunction) 
       where: whereClause,
       include: {
         _count: {
-          select: { tests: true },
+          select: { tests: { where: { isPublished: true } } },
         },
       },
       orderBy: { createdAt: 'asc' },
@@ -22,7 +22,7 @@ export const getExams = async (req: Request, res: Response, next: NextFunction) 
 
     const formatted = exams.map((ex) => ({
       ...ex,
-      testCount: ex.testCount > 0 ? ex.testCount : ex._count.tests,
+      testCount: ex._count.tests,
     }));
 
     return res.status(200).json({

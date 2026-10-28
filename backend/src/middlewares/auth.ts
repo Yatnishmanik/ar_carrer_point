@@ -1,11 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, TokenPayload } from '../utils/jwt';
+import { prisma } from '../lib/prisma';
 
 export interface AuthenticatedRequest extends Request {
   user?: TokenPayload;
 }
 
-export const authenticate = (
+export const authenticate = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
@@ -21,9 +22,14 @@ export const authenticate = (
   const token = authHeader.split(' ')[1];
   try {
     const decoded = verifyToken(token);
-    req.user = decoded;
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    if (!user) return res.status(401).json({ success: false, message: 'Account no longer exists' });
+    req.user = { userId: user.id, email: user.email, role: user.role };
     next();
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && !['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(error.name)) {
+      return next(error);
+    }
     return res.status(401).json({
       success: false,
       message: 'अमान्य या समाप्त टोकन (Invalid or expired token)',

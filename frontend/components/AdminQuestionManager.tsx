@@ -7,8 +7,6 @@ import {
   ShieldAlert,
   PlusCircle,
   Trash2,
-  BookOpen,
-  CheckCircle2,
   Database,
   Layers,
   Sparkles,
@@ -17,13 +15,15 @@ import {
 export const AdminQuestionManager: React.FC = () => {
   const {
     questions,
+    currentUser,
+    openAuthModal,
     addQuestionToBank,
     deleteQuestionFromBank,
     showToast,
     tests,
   } = useApp();
 
-  const [category, setCategory] = useState('Bihar Board Class 10th - Science');
+  const [category, setCategory] = useState('');
   const [subject, setSubject] = useState('General Science');
   const [questionText, setQuestionText] = useState('');
   const [optA, setOptA] = useState('');
@@ -35,7 +35,7 @@ export const AdminQuestionManager: React.FC = () => {
   const [marks, setMarks] = useState(1);
   const [negativeMarks, setNegativeMarks] = useState(0.25);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!questionText.trim()) {
@@ -63,7 +63,8 @@ export const AdminQuestionManager: React.FC = () => {
       negativeMarks: Number(negativeMarks),
     };
 
-    addQuestionToBank(newQuestion, category);
+    if (!category) { showToast('Select a test first.', 'error'); return; }
+    if (!await addQuestionToBank(newQuestion, category)) return;
 
     // Reset form fields
     setQuestionText('');
@@ -73,6 +74,8 @@ export const AdminQuestionManager: React.FC = () => {
     setOptD('');
     setExplanation('');
   };
+
+  if (currentUser?.role !== 'admin') return <div className="p-12 text-center"><h1 className="text-xl font-bold">Admin access required</h1><button className="underline mt-4" onClick={() => openAuthModal()}>Sign in</button></div>;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -93,7 +96,7 @@ export const AdminQuestionManager: React.FC = () => {
                 Admin Panel · Question & Test Management
               </h1>
               <p className="text-xs text-slate-300">
-                Manage questions bank, create mock sets, and prepare tests for Prisma + PostgreSQL backend
+                Manage questions and tests
               </p>
             </div>
           </div>
@@ -130,12 +133,8 @@ export const AdminQuestionManager: React.FC = () => {
                   onChange={(e) => setCategory(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 outline-none focus:border-blue-500 text-base sm:text-sm"
                 >
-                  <option value="Bihar Board Class 10th - Science">Bihar Board Class 10th - Science</option>
-                  <option value="Bihar Board Class 12th">Bihar Board Class 12th</option>
-                  <option value="Railway NTPC">Railway NTPC / Group D</option>
-                  <option value="SSC GD">SSC GD Constable</option>
-                  <option value="BPSC">BPSC / Bihar SI</option>
-                  <option value="General Studies">General Studies & Current Affairs</option>
+                  <option value="">Select a test</option>
+                  {tests.map(test => <option key={test.id} value={test.id}>{test.title}</option>)}
                 </select>
               </div>
 

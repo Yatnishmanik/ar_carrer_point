@@ -7,12 +7,10 @@ import {
   CheckCircle2,
   FileQuestion,
   TrendingUp,
-  RotateCcw,
   Eye,
   Calendar,
   Sparkles,
   ArrowRight,
-  User,
   GraduationCap,
 } from 'lucide-react';
 
@@ -21,8 +19,7 @@ export const StudentDashboardView: React.FC = () => {
     attemptsHistory,
     currentUser,
     startTestById,
-    setActiveTab,
-    finishTestAttempt,
+    reviewAttempt,
   } = useApp();
 
   const totalTests = attemptsHistory.length;
@@ -34,7 +31,7 @@ export const StudentDashboardView: React.FC = () => {
       : 0;
 
   const handleReviewAttempt = (attempt: (typeof attemptsHistory)[0]) => {
-    finishTestAttempt(attempt);
+    void reviewAttempt(attempt.id);
   };
 
   return (

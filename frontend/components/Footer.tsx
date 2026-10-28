@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Sparkles, BookOpen, Heart, ArrowUp } from 'lucide-react';
+import { Sparkles, Heart, ArrowUp } from 'lucide-react';
 
 export const Footer: React.FC = () => {
   const { setActiveTab } = useApp();
@@ -11,11 +11,7 @@ export const Footer: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const [currentYear, setCurrentYear] = React.useState(2026);
-
-  React.useEffect(() => {
-    setCurrentYear(new Date().getFullYear());
-  }, []);
+  const currentYear = React.useSyncExternalStore(() => () => {}, () => new Date().getFullYear(), () => 2026);
 
   return (
     <footer className="bg-[#051c42] text-slate-300 pt-10 sm:pt-12 pb-24 md:pb-8 border-t border-blue-900/60 mt-12 sm:mt-16 pb-safe">

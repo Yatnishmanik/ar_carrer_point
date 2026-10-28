@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { authenticate } from '../middlewares/auth';
 import {
   submitAttempt,
   getUserAttempts,
@@ -7,7 +8,7 @@ import {
 
 const router = Router();
 
-// Test submission (can be authenticated student or guest with userId)
+router.use(authenticate);
 router.post('/', submitAttempt);
 router.get('/user/:userId', getUserAttempts);
 router.get('/:id', getAttemptById);

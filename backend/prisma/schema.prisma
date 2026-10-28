@@ -58,6 +58,7 @@ model Test {
   isPublished     Boolean       @default(true)
   questions       Question[]
   attempts        TestAttempt[]
+  practiceSets    PracticeSet[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -129,6 +130,8 @@ model UserAnswer {
 
 model PracticeSet {
   id              String   @id @default(uuid())
+  testId          String?
+  test            Test?    @relation(fields: [testId], references: [id], onDelete: SetNull)
   title           String
   subject         String
   category        String

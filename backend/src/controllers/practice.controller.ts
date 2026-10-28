@@ -34,6 +34,7 @@ export const createPracticeSet = async (req: Request, res: Response, next: NextF
       pdfUrl,
       isFree,
       difficulty,
+      testId,
     } = req.body;
 
     if (!title || !subject || !category) {
@@ -46,6 +47,7 @@ export const createPracticeSet = async (req: Request, res: Response, next: NextF
     const practiceSet = await prisma.practiceSet.create({
       data: {
         title,
+        testId: testId || null,
         subject,
         category,
         questionsCount: questionsCount ? Number(questionsCount) : 25,

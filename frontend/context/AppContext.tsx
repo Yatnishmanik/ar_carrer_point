@@ -1,317 +1,159 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import {
-  ExamCategory,
-  NoticeUpdate,
-  PracticeSet,
-  Question,
-  Test,
-  TestAttemptResult,
-  UserProfile,
-} from '../types';
-import {
-  defaultQuestions,
-  initialExams,
-  initialPracticeSets,
-  initialTests,
-  initialUpdates,
-} from '../data/mockData';
-
-interface ToastState {
-  show: boolean;
-  message: string;
-  type: 'success' | 'info' | 'error';
-}
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import type { ExamCategory, NoticeUpdate, PracticeSet, Question, Test, TestAttemptResult, UserProfile } from '../types';
+import { apiService, getToken, setToken, type ApiQuestion, type ApiTest, type ApiStoredAttempt, type ApiUser } from '../lib/api';
 
 interface AppContextType {
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
-  searchQuery: string;
-  setSearchQuery: (query: string) => void;
-  exams: ExamCategory[];
-  practiceSets: PracticeSet[];
-  tests: Test[];
-  questions: Question[];
-  updates: NoticeUpdate[];
-  activeTest: Test | null;
-  currentResult: TestAttemptResult | null;
-  attemptsHistory: TestAttemptResult[];
-  currentUser: UserProfile | null;
-  isAuthModalOpen: boolean;
-  authModalTab: 'login' | 'signup';
-  toast: ToastState;
-  
-  // Actions
-  startTestById: (testId?: string) => void;
-  startCustomTestWithQuestions: (title: string, questionsList: Question[]) => void;
-  finishTestAttempt: (attempt: TestAttemptResult) => void;
-  addQuestionToBank: (newQ: Question, categoryTestTitle?: string) => void;
-  deleteQuestionFromBank: (questionId: string) => void;
-  openAuthModal: (mode?: 'login' | 'signup') => void;
-  closeAuthModal: () => void;
-  loginUser: (email: string, role?: 'student' | 'admin', name?: string) => void;
-  logoutUser: () => void;
-  showToast: (message: string, type?: 'success' | 'info' | 'error') => void;
-  hideToast: () => void;
-  retakeCurrentTest: () => void;
+  activeTab: string; setActiveTab: (tab: string) => void;
+  searchQuery: string; setSearchQuery: (query: string) => void;
+  exams: ExamCategory[]; practiceSets: PracticeSet[]; tests: Test[]; questions: Question[]; updates: NoticeUpdate[];
+  activeTest: Test | null; currentResult: TestAttemptResult | null; attemptsHistory: TestAttemptResult[];
+  currentUser: UserProfile | null; isAuthModalOpen: boolean; authModalTab: 'login' | 'signup';
+  toast: { show: boolean; message: string; type: 'success' | 'info' | 'error' };
+  loading: boolean; error: string | null;
+  startTestById: (id?: string) => Promise<void>;
+  submitTestAnswers: (answers: Record<number, number>, marked: number[], seconds: number) => Promise<void>;
+  reviewAttempt: (id: string) => Promise<void>;
+  addQuestionToBank: (q: Question, testId?: string) => Promise<boolean>;
+  deleteQuestionFromBank: (id: string) => Promise<void>;
+  openAuthModal: (mode?: 'login' | 'signup') => void; closeAuthModal: () => void;
+  loginUser: (email: string, password: string, name?: string, targetExam?: string) => Promise<void>;
+  logoutUser: () => void; showToast: (message: string, type?: 'success' | 'info' | 'error') => void;
+  hideToast: () => void; retakeCurrentTest: () => void; refreshData: () => Promise<void>;
 }
-
 const AppContext = createContext<AppContextType | undefined>(undefined);
+const messageOf = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please retry.';
+const toQuestion = (q: ApiQuestion): Question => ({ ...q, correctOptionIndex: q.options.findIndex(o => o.isCorrect) });
+const toTest = (t: ApiTest): Test => ({ ...t, subtitle: t.subtitle || '', category: t.categoryName,
+  questions: (t.questions || []).map(toQuestion) });
+const toUser = (u: ApiUser): UserProfile => ({ ...u, role: u.role === 'ADMIN' ? 'admin' : 'student' });
+const toAttempt = (a: ApiStoredAttempt): TestAttemptResult => {
+  const rows = a.userAnswers || [];
+  const questions = rows.map(r => toQuestion(r.question));
+  const answers: Record<number, number> = {};
+  rows.forEach((r, i) => { const index = r.question.options.findIndex(o => o.id === r.selectedOptionId); if (index >= 0) answers[i] = index; });
+  return { id: a.id, testId: a.testId, testTitle: a.test.title, timestamp: a.createdAt,
+    totalQuestions: a.correctCount + a.incorrectCount + a.unansweredCount, attempted: a.correctCount + a.incorrectCount,
+    correct: a.correctCount, wrong: a.incorrectCount, unanswered: a.unansweredCount,
+    score: a.score, maxScore: a.maxScore, percentage: a.percentage, timeSpentSeconds: a.timeSpentSeconds,
+    answers, markedQuestions: [], questions };
+};
 
-const LOCAL_STORAGE_KEY_ATTEMPTS = 'ar_career_point_attempts_v1';
-const LOCAL_STORAGE_KEY_QUESTIONS = 'ar_career_point_questions_v1';
-const LOCAL_STORAGE_KEY_USER = 'ar_career_point_user_v1';
-
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeTab, setActiveTab] = useState<string>('home');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [exams] = useState<ExamCategory[]>(initialExams);
-  const [practiceSets] = useState<PracticeSet[]>(initialPracticeSets);
-  const [tests, setTests] = useState<Test[]>(initialTests);
-  const [questions, setQuestions] = useState<Question[]>(defaultQuestions);
-  const [updates] = useState<NoticeUpdate[]>(initialUpdates);
-
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const activeTab = pathname === '/' ? 'home' : pathname.split('/')[1];
+  const setActiveTab = useCallback((tab: string) => {
+    if (['home', 'tests', 'practice', 'quiz', 'result', 'dashboard', 'admin'].includes(tab)) router.push(tab === 'home' ? '/' : `/${tab}`);
+  }, [router]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [exams, setExams] = useState<ExamCategory[]>([]);
+  const [practiceSets, setPracticeSets] = useState<PracticeSet[]>([]);
+  const [tests, setTests] = useState<Test[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [updates, setUpdates] = useState<NoticeUpdate[]>([]);
   const [activeTest, setActiveTest] = useState<Test | null>(null);
   const [currentResult, setCurrentResult] = useState<TestAttemptResult | null>(null);
   const [attemptsHistory, setAttemptsHistory] = useState<TestAttemptResult[]>([]);
-
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>({
-    id: 'user-demo-1',
-    name: 'अमित कुमार (Demo Student)',
-    email: 'amit.demo@example.com',
-    role: 'student',
-    targetExam: 'Bihar Board Class 10th',
-  });
-
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState<'login' | 'signup'>('login');
-  const [toast, setToast] = useState<ToastState>({
-    show: false,
-    message: '',
-    type: 'info',
-  });
-
-  // Load persisted history & questions on mount
-  useEffect(() => {
-    try {
-      const savedHistory = localStorage.getItem(LOCAL_STORAGE_KEY_ATTEMPTS);
-      if (savedHistory) {
-        setAttemptsHistory(JSON.parse(savedHistory));
-      }
-      const savedQuestions = localStorage.getItem(LOCAL_STORAGE_KEY_QUESTIONS);
-      if (savedQuestions) {
-        const loadedQ = JSON.parse(savedQuestions);
-        if (Array.isArray(loadedQ) && loadedQ.length > 0) {
-          setQuestions(loadedQ);
-        }
-      }
-      const savedUser = localStorage.getItem(LOCAL_STORAGE_KEY_USER);
-      if (savedUser) {
-        setCurrentUser(JSON.parse(savedUser));
-      }
-    } catch {
-      // ignore JSON errors
-    }
-  }, []);
-
-  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'info') => {
+  const [toast, setToast] = useState<AppContextType['toast']>({ show: false, message: '', type: 'info' });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const authVersion = useRef(0);
+  const showToast = useCallback((message: string, type: 'success' | 'info' | 'error' = 'info') => {
+    if (toastTimeout.current) clearTimeout(toastTimeout.current);
     setToast({ show: true, message, type });
-    setTimeout(() => {
-      setToast(prev => ({ ...prev, show: false }));
-    }, 3200);
-  };
-
-  const hideToast = () => {
-    setToast(prev => ({ ...prev, show: false }));
-  };
-
-  const startTestById = (testId?: string) => {
-    const found = tests.find(t => t.id === testId) || tests[0];
-    // Attach fresh questions if test uses default set
-    const effectiveTest: Test = {
-      ...found,
-      questions: found.questions && found.questions.length > 0 ? found.questions : questions,
-    };
-    setActiveTest(effectiveTest);
-    setActiveTab('quiz');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    showToast(`"${effectiveTest.title}" शुरू हो गया है। All the best!`, 'info');
-  };
-
-  const startCustomTestWithQuestions = (title: string, questionsList: Question[]) => {
-    const customTest: Test = {
-      id: `custom-${Date.now()}`,
-      title,
-      subtitle: 'Online Practice Mock Test',
-      category: 'General Practice',
-      durationMinutes: Math.max(5, Math.ceil(questionsList.length * 1.2)),
-      totalMarks: questionsList.length,
-      passingMarks: Math.ceil(questionsList.length * 0.4),
-      questions: questionsList,
-    };
-    setActiveTest(customTest);
-    setActiveTab('quiz');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const retakeCurrentTest = () => {
-    if (activeTest) {
-      setActiveTab('quiz');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      startTestById();
+    toastTimeout.current = setTimeout(() => setToast(t => ({ ...t, show: false })), 5000);
+  }, []);
+  const refreshData = useCallback(() =>
+    Promise.all([apiService.getExams(), apiService.getPracticeSets(), apiService.getTests(), apiService.getUpdates()])
+      .then(([exams, practices, tests, updates]) => {
+        setExams(exams); setPracticeSets(practices); setTests(tests.map(toTest)); setUpdates(updates); setError(null);
+      }).catch(e => { setError(messageOf(e)); }).finally(() => setLoading(false)), []);
+  useEffect(() => {
+    void refreshData();
+    if (getToken()) {
+      const version = authVersion.current;
+      apiService.getMe().then(u => { if (version === authVersion.current) setCurrentUser(toUser(u)); })
+        .catch(() => { if (version === authVersion.current) { setToken(null); setCurrentUser(null); } });
     }
-  };
-
-  const finishTestAttempt = (attempt: TestAttemptResult) => {
-    setCurrentResult(attempt);
-    setAttemptsHistory(prev => {
-      const next = [attempt, ...prev];
-      try {
-        localStorage.setItem(LOCAL_STORAGE_KEY_ATTEMPTS, JSON.stringify(next));
-      } catch {
-        // ignore storage errors
-      }
-      return next;
-    });
-    setActiveTab('result');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    showToast('आपका टेस्ट सफलतापूर्वक सबमिट हो गया है!', 'success');
-  };
-
-  const addQuestionToBank = (newQ: Question, categoryTestTitle?: string) => {
-    setQuestions(prev => {
-      const updated = [...prev, newQ];
-      try {
-        localStorage.setItem(LOCAL_STORAGE_KEY_QUESTIONS, JSON.stringify(updated));
-      } catch {
-        // ignore
-      }
-      return updated;
-    });
-
-    // Also update tests if applicable
-    setTests(prev =>
-      prev.map(t => {
-        if (!categoryTestTitle || t.title.toLowerCase().includes(categoryTestTitle.toLowerCase()) || t.category.toLowerCase().includes(categoryTestTitle.toLowerCase())) {
-          return {
-            ...t,
-            questions: [...t.questions, newQ],
-            totalMarks: t.totalMarks + (newQ.marks || 1),
-          };
-        }
-        return t;
-      })
-    );
-
-    showToast('नया प्रश्न सफलता से टेस्ट बैंक में जोड़ा गया!', 'success');
-  };
-
-  const deleteQuestionFromBank = (questionId: string) => {
-    if (questions.length <= 1) {
-      showToast('कम से कम एक प्रश्न टेस्ट में रहना आवश्यक है।', 'error');
-      return;
+    return () => { if (toastTimeout.current) clearTimeout(toastTimeout.current); };
+  }, [refreshData]);
+  useEffect(() => {
+    let cancelled = false;
+    if (currentUser) {
+      apiService.getUserAttempts(currentUser.id).then(rows => { if (!cancelled) setAttemptsHistory(rows.map(toAttempt)); }).catch(e => showToast(messageOf(e), 'error'));
+      if (currentUser.role === 'admin') apiService.getQuestions().then(rows => { if (!cancelled) setQuestions(rows.map(toQuestion)); }).catch(e => showToast(messageOf(e), 'error'));
     }
-    setQuestions(prev => {
-      const updated = prev.filter(q => q.id !== questionId);
-      try {
-        localStorage.setItem(LOCAL_STORAGE_KEY_QUESTIONS, JSON.stringify(updated));
-      } catch {
-        // ignore
-      }
-      return updated;
-    });
-
-    setTests(prev =>
-      prev.map(t => ({
-        ...t,
-        questions: t.questions.filter(q => q.id !== questionId),
-      }))
-    );
-
-    showToast('प्रश्न हटा दिया गया।', 'info');
+    return () => { cancelled = true; };
+  }, [currentUser, showToast]);
+  const openAuthModal = (mode: 'login' | 'signup' = 'login') => { setAuthModalTab(mode); setIsAuthModalOpen(true); };
+  const loginUser = async (email: string, password: string, name?: string, targetExam?: string) => {
+    const version = ++authVersion.current;
+    const result = name === undefined ? await apiService.login({ email, password }) : await apiService.register({ email, password, name, targetExam });
+    if (version !== authVersion.current) return;
+    setToken(result.token); setAttemptsHistory([]); setQuestions([]); setActiveTest(null); setCurrentResult(null);
+    setCurrentUser(toUser(result.user)); setIsAuthModalOpen(false); showToast(`Welcome, ${result.user.name}`, 'success');
   };
-
-  const openAuthModal = (mode: 'login' | 'signup' = 'login') => {
-    setAuthModalTab(mode);
-    setIsAuthModalOpen(true);
-  };
-
-  const closeAuthModal = () => {
-    setIsAuthModalOpen(false);
-  };
-
-  const loginUser = (email: string, role: 'student' | 'admin' = 'student', name?: string) => {
-    const user: UserProfile = {
-      id: `usr-${Date.now()}`,
-      email,
-      name: name || (role === 'admin' ? 'Admin Officer' : email.split('@')[0]),
-      role,
-      targetExam: role === 'admin' ? 'All Exam Controller' : 'Bihar Board Class 10th',
-    };
-    setCurrentUser(user);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY_USER, JSON.stringify(user));
-    } catch {
-      // ignore
-    }
-    setIsAuthModalOpen(false);
-    showToast(`स्वागत है, ${user.name}! (${role === 'admin' ? 'Admin' : 'Student'})`, 'success');
-  };
-
   const logoutUser = () => {
-    setCurrentUser(null);
-    try {
-      localStorage.removeItem(LOCAL_STORAGE_KEY_USER);
-    } catch {
-      // ignore
-    }
-    showToast('आप सफलतापूर्वक लॉग आउट हो गए हैं।', 'info');
+    authVersion.current++; setToken(null); setCurrentUser(null); setAttemptsHistory([]); setQuestions([]); setActiveTest(null); setCurrentResult(null); setActiveTab('home');
   };
-
-  return (
-    <AppContext.Provider
-      value={{
-        activeTab,
-        setActiveTab,
-        searchQuery,
-        setSearchQuery,
-        exams,
-        practiceSets,
-        tests,
-        questions,
-        updates,
-        activeTest,
-        currentResult,
-        attemptsHistory,
-        currentUser,
-        isAuthModalOpen,
-        authModalTab,
-        toast,
-        startTestById,
-        startCustomTestWithQuestions,
-        finishTestAttempt,
-        addQuestionToBank,
-        deleteQuestionFromBank,
-        openAuthModal,
-        closeAuthModal,
-        loginUser,
-        logoutUser,
-        showToast,
-        hideToast,
-        retakeCurrentTest,
-      }}
-    >
-      {children}
-    </AppContext.Provider>
-  );
-};
-
+  const startTestById = async (id?: string) => {
+    if (!currentUser) { openAuthModal(); return; }
+    const testId = id || tests[0]?.id;
+    if (!testId) { showToast('No published test is available yet.', 'info'); return; }
+    try {
+      const test = toTest(await apiService.getTestById(testId));
+      if (!test.questions.length) throw new Error('This test has no questions yet.');
+      setActiveTest({ ...test, startedAt: Date.now() }); setCurrentResult(null); setActiveTab('quiz');
+    } catch (e) { showToast(messageOf(e), 'error'); }
+  };
+  const submitTestAnswers = async (answers: Record<number, number>, marked: number[], seconds: number) => {
+    if (!activeTest || !currentUser) throw new Error('Please sign in and select a test.');
+    const result = await apiService.submitAttempt({ testId: activeTest.id, timeSpentSeconds: seconds,
+      answers: Object.entries(answers).map(([index, option]) => ({ questionId: activeTest.questions[Number(index)].id, selectedOptionId: activeTest.questions[Number(index)].options[option].id })) });
+    const reviewAnswers: Record<number, number> = {};
+    const reviewQuestions = result.questionReview.map((q, i) => {
+      const selected = q.options.findIndex(o => o.id === q.userSelectedOptionId);
+      if (selected >= 0) reviewAnswers[i] = selected;
+      return { ...q, id: q.questionId, correctOptionIndex: q.options.findIndex(o => o.id === q.correctOptionId) };
+    });
+    const attempt: TestAttemptResult = { id: result.attemptId, testId: result.testId, testTitle: result.testTitle,
+      timestamp: result.timestamp, totalQuestions: result.totalQuestions, attempted: result.correctCount + result.incorrectCount,
+      correct: result.correctCount, wrong: result.incorrectCount, unanswered: result.unansweredCount, score: result.score,
+      maxScore: result.maxScore, percentage: result.percentage, timeSpentSeconds: result.timeSpentSeconds,
+      answers: reviewAnswers, markedQuestions: marked, questions: reviewQuestions };
+    setCurrentResult(attempt); setAttemptsHistory(prev => [attempt, ...prev.filter(a => a.id !== attempt.id)]);
+    setActiveTab('result'); showToast('Test submitted successfully.', 'success');
+  };
+  const reviewAttempt = async (id: string) => {
+    try { setCurrentResult(toAttempt(await apiService.getAttemptById(id))); setActiveTab('result'); }
+    catch (e) { showToast(messageOf(e), 'error'); }
+  };
+  const addQuestionToBank = async (q: Question, testId?: string) => {
+    try {
+      await apiService.createQuestion({ ...q, id: undefined, testId, options: q.options.map((o, i) => ({ text: o.text, isCorrect: i === q.correctOptionIndex })) });
+      setQuestions((await apiService.getQuestions()).map(toQuestion)); await refreshData(); showToast('Question saved.', 'success'); return true;
+    } catch (e) { showToast(messageOf(e), 'error'); return false; }
+  };
+  const deleteQuestionFromBank = async (id: string) => {
+    try { await apiService.deleteQuestion(id); setQuestions(prev => prev.filter(q => q.id !== id)); await refreshData(); showToast('Question deleted.', 'success'); }
+    catch (e) { showToast(messageOf(e), 'error'); }
+  };
+  return <AppContext.Provider value={{ activeTab, setActiveTab, searchQuery, setSearchQuery, exams, practiceSets, tests, questions, updates,
+    activeTest, currentResult, attemptsHistory, currentUser, isAuthModalOpen, authModalTab, toast, loading, error,
+    startTestById, submitTestAnswers, reviewAttempt, addQuestionToBank, deleteQuestionFromBank, openAuthModal,
+    closeAuthModal: () => setIsAuthModalOpen(false), loginUser, logoutUser, showToast,
+    hideToast: () => setToast(t => ({ ...t, show: false })), retakeCurrentTest: () => { void startTestById(activeTest?.id || currentResult?.testId); }, refreshData,
+  }}>{children}</AppContext.Provider>;
+}
 export const useApp = () => {
   const context = useContext(AppContext);
-  if (!context) {
-    throw new Error('useApp must be used within an AppProvider');
-  }
+  if (!context) throw new Error('useApp must be used within an AppProvider');
   return context;
 };

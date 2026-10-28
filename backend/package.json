@@ -7,11 +7,12 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:push": "prisma db push",
+    "prisma:generate": "node scripts/prisma.cjs generate",
+    "prisma:migrate": "node scripts/prisma.cjs migrate dev",
+    "prisma:push": "node scripts/prisma.cjs db push",
     "prisma:seed": "tsx prisma/seed.ts",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "node scripts/prisma.cjs studio",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",

@@ -8,7 +8,7 @@ import { authenticate, requireAdmin } from '../middlewares/auth';
 
 const router = Router();
 
-router.get('/', getAllQuestions);
+router.get('/', authenticate, requireAdmin, getAllQuestions);
 router.post('/', authenticate, requireAdmin, addQuestion);
 router.delete('/:id', authenticate, requireAdmin, deleteQuestion);
 

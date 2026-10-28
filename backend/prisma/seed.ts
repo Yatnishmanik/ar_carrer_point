@@ -1,6 +1,9 @@
 import process from 'node:process';
 import { PrismaClient, Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
+dotenv.config();
 
 const prisma = new PrismaClient();
 
@@ -8,12 +11,17 @@ async function main() {
   console.log('🌱 Starting database seed for AR Career Point...');
 
   // 1. Create Default Admin & Student Users
-  const adminPassword = await bcrypt.hash('adminpassword123', 10);
-  const studentPassword = await bcrypt.hash('studentpassword123', 10);
+  const adminSeedPassword = process.env.SEED_ADMIN_PASSWORD;
+  const studentSeedPassword = process.env.SEED_STUDENT_PASSWORD;
+  if (!adminSeedPassword || !studentSeedPassword || adminSeedPassword.length < 12 || studentSeedPassword.length < 12) {
+    throw new Error('Set SEED_ADMIN_PASSWORD and SEED_STUDENT_PASSWORD to unique passwords of at least 12 characters.');
+  }
+  const adminPassword = await bcrypt.hash(adminSeedPassword, 10);
+  const studentPassword = await bcrypt.hash(studentSeedPassword, 10);
 
   const adminUser = await prisma.user.upsert({
     where: { email: 'admin@arcareerpoint.com' },
-    update: {},
+    update: { password: adminPassword, role: Role.ADMIN },
     create: {
       name: 'प्रशासनिक अधिकारी (Admin Officer)',
       email: 'admin@arcareerpoint.com',
@@ -25,7 +33,7 @@ async function main() {
 
   const studentUser = await prisma.user.upsert({
     where: { email: 'student.demo@arcareerpoint.com' },
-    update: {},
+    update: { password: studentPassword, role: Role.STUDENT },
     create: {
       name: 'राहुल शर्मा (Demo Student)',
       email: 'student.demo@arcareerpoint.com',
@@ -124,6 +132,7 @@ async function main() {
 
   // 3. Create Sample Mock Tests with Questions
   const scienceTest = await prisma.test.upsert({
+    include: { questions: true },
     where: { id: 'test-bseb-10-sci' },
     update: {},
     create: {
@@ -282,11 +291,12 @@ async function main() {
   const practiceSets = [
     {
       id: 'ps-1',
+      testId: scienceTest.id,
       title: 'Bihar Board 10th Science Practice Set – 01',
       subject: 'Science (विज्ञान)',
       category: 'Bihar Board Class 10th',
-      questionsCount: 25,
-      durationMinutes: 30,
+      questionsCount: scienceTest.questions.length,
+      durationMinutes: scienceTest.durationMinutes,
       isFree: true,
       difficulty: 'Easy',
     },

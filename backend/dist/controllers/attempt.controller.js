@@ -6,11 +6,15 @@ const grading_1 = require("../utils/grading");
 const submitAttempt = async (req, res, next) => {
     try {
         const { testId, answers = [], timeSpentSeconds = 0 } = req.body;
-        const userId = req.user?.userId || req.body.userId || null;
-        if (!testId) {
+        const userId = req.user.userId;
+        if (typeof testId !== 'string' || !Array.isArray(answers) ||
+            !Number.isInteger(timeSpentSeconds) || timeSpentSeconds < 0 ||
+            answers.some((a) => !a || typeof a !== 'object' ||
+                typeof a.questionId !== 'string' ||
+                typeof a.selectedOptionId !== 'string')) {
             return res.status(400).json({
                 success: false,
-                message: 'testId is required to submit attempt',
+                message: 'Provide testId, valid answers, and non-negative integer timeSpentSeconds',
             });
         }
         // Fetch the test with its questions and correct options
@@ -24,11 +28,22 @@ const submitAttempt = async (req, res, next) => {
                 },
             },
         });
-        if (!test) {
+        if (!test || !test.isPublished) {
             return res.status(404).json({
                 success: false,
                 message: 'टेस्ट नहीं मिला (Test not found)',
             });
+        }
+        const seen = new Set();
+        for (const answer of answers) {
+            const question = test.questions.find(q => q.id === answer.questionId);
+            if (seen.has(answer.questionId) || !question || !question.options.some(o => o.id === answer.selectedOptionId)) {
+                return res.status(400).json({ success: false, message: 'Duplicate answer or question/option outside this test' });
+            }
+            seen.add(answer.questionId);
+        }
+        if (!test.questions.length || timeSpentSeconds > test.durationMinutes * 60) {
+            return res.status(400).json({ success: false, message: 'Empty test or invalid test duration' });
         }
         // Format input for grading engine
         const gradingQuestionsInput = test.questions.map((q) => ({
@@ -42,7 +57,7 @@ const submitAttempt = async (req, res, next) => {
         }));
         // Run grading engine
         const gradingResult = (0, grading_1.gradeAttempt)(gradingQuestionsInput, answers, test.passingMarks > 0 && test.totalMarks > 0
-            ? Math.round((test.passingMarks / test.totalMarks) * 100)
+            ? (test.passingMarks / test.totalMarks) * 100
             : 40);
         // Save in Database
         const attempt = await prisma_1.prisma.$transaction(async (tx) => {
@@ -128,6 +143,9 @@ const getUserAttempts = async (req, res, next) => {
                 message: 'userId required',
             });
         }
+        if (req.user.role !== 'ADMIN' && userId !== req.user.userId) {
+            return res.status(403).json({ success: false, message: 'You can only view your own attempts' });
+        }
         const attempts = await prisma_1.prisma.testAttempt.findMany({
             where: { userId: String(userId) },
             include: {
@@ -155,8 +173,8 @@ const getAttemptById = async (req, res, next) => {
     try {
         const rawId = req.params.id;
         const id = Array.isArray(rawId) ? rawId[0] : rawId;
-        const attempt = await prisma_1.prisma.testAttempt.findUnique({
-            where: { id: String(id) },
+        const attempt = await prisma_1.prisma.testAttempt.findFirst({
+            where: { id: String(id), ...(req.user.role === 'ADMIN' ? {} : { userId: req.user.userId }) },
             include: {
                 test: {
                     select: { title: true, categoryName: true },

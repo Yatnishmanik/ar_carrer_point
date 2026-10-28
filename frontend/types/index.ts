@@ -32,6 +32,7 @@ export interface ExamCategory {
 }
 
 export interface PracticeSet {
+  testId?: string;
   id: string;
   title: string;
   subject: string;
@@ -44,6 +45,9 @@ export interface PracticeSet {
 }
 
 export interface Test {
+  startedAt?: number;
+  categoryId?: string;
+  questionCount?: number;
   id: string;
   title: string;
   subtitle: string;

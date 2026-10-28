@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { prisma } from '../lib/prisma';
 import { gradeAttempt } from '../utils/grading';
 import { AuthenticatedRequest } from '../middlewares/auth';
@@ -6,12 +6,16 @@ import { AuthenticatedRequest } from '../middlewares/auth';
 export const submitAttempt = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { testId, answers = [], timeSpentSeconds = 0 } = req.body;
-    const userId = req.user?.userId || req.body.userId || null;
+    const userId = req.user!.userId;
 
-    if (!testId) {
+    if (typeof testId !== 'string' || !Array.isArray(answers) ||
+        !Number.isInteger(timeSpentSeconds) || timeSpentSeconds < 0 ||
+        answers.some((a: unknown) => !a || typeof a !== 'object' ||
+          typeof (a as { questionId?: unknown }).questionId !== 'string' ||
+          typeof (a as { selectedOptionId?: unknown }).selectedOptionId !== 'string')) {
       return res.status(400).json({
         success: false,
-        message: 'testId is required to submit attempt',
+        message: 'Provide testId, valid answers, and non-negative integer timeSpentSeconds',
       });
     }
 
@@ -27,11 +31,23 @@ export const submitAttempt = async (req: AuthenticatedRequest, res: Response, ne
       },
     });
 
-    if (!test) {
+    if (!test || !test.isPublished) {
       return res.status(404).json({
         success: false,
         message: 'टेस्ट नहीं मिला (Test not found)',
       });
+    }
+
+    const seen = new Set<string>();
+    for (const answer of answers) {
+      const question = test.questions.find(q => q.id === answer.questionId);
+      if (seen.has(answer.questionId) || !question || !question.options.some(o => o.id === answer.selectedOptionId)) {
+        return res.status(400).json({ success: false, message: 'Duplicate answer or question/option outside this test' });
+      }
+      seen.add(answer.questionId);
+    }
+    if (!test.questions.length || timeSpentSeconds > test.durationMinutes * 60) {
+      return res.status(400).json({ success: false, message: 'Empty test or invalid test duration' });
     }
 
     // Format input for grading engine
@@ -50,7 +66,7 @@ export const submitAttempt = async (req: AuthenticatedRequest, res: Response, ne
       gradingQuestionsInput,
       answers,
       test.passingMarks > 0 && test.totalMarks > 0
-        ? Math.round((test.passingMarks / test.totalMarks) * 100)
+        ? (test.passingMarks / test.totalMarks) * 100
         : 40
     );
 
@@ -143,6 +159,10 @@ export const getUserAttempts = async (req: AuthenticatedRequest, res: Response, 
       });
     }
 
+    if (req.user!.role !== 'ADMIN' && userId !== req.user!.userId) {
+      return res.status(403).json({ success: false, message: 'You can only view your own attempts' });
+    }
+
     const attempts = await prisma.testAttempt.findMany({
       where: { userId: String(userId) },
       include: {
@@ -166,13 +186,13 @@ export const getUserAttempts = async (req: AuthenticatedRequest, res: Response, 
   }
 };
 
-export const getAttemptById = async (req: Request, res: Response, next: NextFunction) => {
+export const getAttemptById = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
-    const attempt = await prisma.testAttempt.findUnique({
-      where: { id: String(id) },
+    const attempt = await prisma.testAttempt.findFirst({
+      where: { id: String(id), ...(req.user!.role === 'ADMIN' ? {} : { userId: req.user!.userId }) },
       include: {
         test: {
           select: { title: true, categoryName: true },

@@ -14,7 +14,7 @@ export const errorHandler = (
     return res.status(409).json({
       success: false,
       message: 'इस विवरण (ईमेल या आईडी) का रिकॉर्ड पहले से मौजूद है।',
-      error: err.message,
+
     });
   }
 
@@ -23,14 +23,14 @@ export const errorHandler = (
     return res.status(404).json({
       success: false,
       message: 'अनुरोधित रिकॉर्ड नहीं मिला।',
-      error: err.message,
+
     });
   }
 
   const statusCode = err.status || 500;
   return res.status(statusCode).json({
     success: false,
-    message: err.message || 'आंतरिक सर्वर त्रुटि (Internal Server Error)',
+    message: statusCode >= 500 ? 'Internal server error' : err.message,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
   });
 };

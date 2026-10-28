@@ -17,11 +17,11 @@ export const getTests = async (req: Request, res: Response, next: NextFunction) 
     }
 
     if (search && typeof search === 'string') {
-      where.OR = [
+      where.AND = [{ OR: [
         { title: { contains: search, mode: 'insensitive' } },
         { subtitle: { contains: search, mode: 'insensitive' } },
         { categoryName: { contains: search, mode: 'insensitive' } },
-      ];
+      ] }];
     }
 
     const tests = await prisma.test.findMany({
@@ -57,6 +57,7 @@ export const getTestById = async (req: Request, res: Response, next: NextFunctio
       where: { id },
       include: {
         questions: {
+          omit: { explanation: true },
           orderBy: { order: 'asc' },
           include: {
             options: {
@@ -73,7 +74,7 @@ export const getTestById = async (req: Request, res: Response, next: NextFunctio
       },
     });
 
-    if (!test) {
+    if (!test || !test.isPublished) {
       return res.status(404).json({
         success: false,
         message: 'टेस्ट नहीं मिला (Test not found)',

@@ -15,11 +15,11 @@ const getTests = async (req, res, next) => {
             ];
         }
         if (search && typeof search === 'string') {
-            where.OR = [
-                { title: { contains: search, mode: 'insensitive' } },
-                { subtitle: { contains: search, mode: 'insensitive' } },
-                { categoryName: { contains: search, mode: 'insensitive' } },
-            ];
+            where.AND = [{ OR: [
+                        { title: { contains: search, mode: 'insensitive' } },
+                        { subtitle: { contains: search, mode: 'insensitive' } },
+                        { categoryName: { contains: search, mode: 'insensitive' } },
+                    ] }];
         }
         const tests = await prisma_1.prisma.test.findMany({
             where,
@@ -52,6 +52,7 @@ const getTestById = async (req, res, next) => {
             where: { id },
             include: {
                 questions: {
+                    omit: { explanation: true },
                     orderBy: { order: 'asc' },
                     include: {
                         options: {
@@ -67,7 +68,7 @@ const getTestById = async (req, res, next) => {
                 },
             },
         });
-        if (!test) {
+        if (!test || !test.isPublished) {
             return res.status(404).json({
                 success: false,
                 message: 'टेस्ट नहीं मिला (Test not found)',

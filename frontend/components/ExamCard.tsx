@@ -10,10 +10,12 @@ interface ExamCardProps {
 }
 
 export const ExamCard: React.FC<ExamCardProps> = ({ exam }) => {
-  const { startTestById } = useApp();
+  const { tests, startTestById, showToast } = useApp();
 
   const handleStart = () => {
-    startTestById();
+    const test = tests.find(test => test.categoryId === exam.id);
+    if (test) void startTestById(test.id);
+    else showToast('No published test is available for this exam yet.', 'info');
   };
 
   return (

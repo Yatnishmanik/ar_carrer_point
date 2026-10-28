@@ -55,7 +55,7 @@ export const gradeAttempt = (
   }
 
   // Calculate max score
-  const maxScore = questions.reduce((sum, q) => sum + (q.marks || 1), 0);
+  const maxScore = questions.reduce((sum, q) => sum + (q.marks ?? 1), 0);
 
   for (const question of questions) {
     const selectedId = answersMap.get(question.id);
@@ -103,7 +103,7 @@ export const gradeAttempt = (
   // Bound score at 0 minimum and 2 decimal points
   const finalScore = Math.max(0, Number(score.toFixed(2)));
   const percentage = maxScore > 0 ? Math.round((finalScore / maxScore) * 100) : 0;
-  const passed = percentage >= passingPercentage;
+  const passed = maxScore > 0 && (finalScore / maxScore) * 100 >= passingPercentage;
 
   return {
     score: finalScore,

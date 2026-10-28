@@ -2,7 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireAdmin = exports.authenticate = void 0;
 const jwt_1 = require("../utils/jwt");
-const authenticate = (req, res, next) => {
+const prisma_1 = require("../lib/prisma");
+const authenticate = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({
@@ -13,10 +14,16 @@ const authenticate = (req, res, next) => {
     const token = authHeader.split(' ')[1];
     try {
         const decoded = (0, jwt_1.verifyToken)(token);
-        req.user = decoded;
+        const user = await prisma_1.prisma.user.findUnique({ where: { id: decoded.userId } });
+        if (!user)
+            return res.status(401).json({ success: false, message: 'Account no longer exists' });
+        req.user = { userId: user.id, email: user.email, role: user.role };
         next();
     }
-    catch {
+    catch (error) {
+        if (error instanceof Error && !['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(error.name)) {
+            return next(error);
+        }
         return res.status(401).json({
             success: false,
             message: 'अमान्य या समाप्त टोकन (Invalid or expired token)',

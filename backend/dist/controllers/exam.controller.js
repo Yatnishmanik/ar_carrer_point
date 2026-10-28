@@ -13,14 +13,14 @@ const getExams = async (req, res, next) => {
             where: whereClause,
             include: {
                 _count: {
-                    select: { tests: true },
+                    select: { tests: { where: { isPublished: true } } },
                 },
             },
             orderBy: { createdAt: 'asc' },
         });
         const formatted = exams.map((ex) => ({
             ...ex,
-            testCount: ex.testCount > 0 ? ex.testCount : ex._count.tests,
+            testCount: ex._count.tests,
         }));
         return res.status(200).json({
             success: true,

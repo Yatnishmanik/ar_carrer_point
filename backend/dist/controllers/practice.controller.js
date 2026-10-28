@@ -26,7 +26,7 @@ const getPracticeSets = async (req, res, next) => {
 exports.getPracticeSets = getPracticeSets;
 const createPracticeSet = async (req, res, next) => {
     try {
-        const { title, subject, category, questionsCount, durationMinutes, pdfUrl, isFree, difficulty, } = req.body;
+        const { title, subject, category, questionsCount, durationMinutes, pdfUrl, isFree, difficulty, testId, } = req.body;
         if (!title || !subject || !category) {
             return res.status(400).json({
                 success: false,
@@ -36,6 +36,7 @@ const createPracticeSet = async (req, res, next) => {
         const practiceSet = await prisma_1.prisma.practiceSet.create({
             data: {
                 title,
+                testId: testId || null,
                 subject,
                 category,
                 questionsCount: questionsCount ? Number(questionsCount) : 25,

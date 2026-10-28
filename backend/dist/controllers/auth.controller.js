@@ -9,11 +9,15 @@ const prisma_1 = require("../lib/prisma");
 const jwt_1 = require("../utils/jwt");
 const register = async (req, res, next) => {
     try {
-        const { name, email, password, phone, targetExam, role } = req.body;
-        if (!name || !email || !password) {
+        const { name, email, password, phone, targetExam } = req.body;
+        if (typeof name !== 'string' || !name.trim() || typeof email !== 'string' ||
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || typeof password !== 'string' ||
+            password.length < 8 || Buffer.byteLength(password, 'utf8') > 72 ||
+            (phone !== undefined && typeof phone !== 'string') ||
+            (targetExam !== undefined && typeof targetExam !== 'string')) {
             return res.status(400).json({
                 success: false,
-                message: 'नाम, ईमेल और पासवर्ड आवश्यक हैं (Name, email, password required)',
+                message: 'Provide a name, valid email, and password of at least 8 characters (maximum 72 UTF-8 bytes).',
             });
         }
         const existingUser = await prisma_1.prisma.user.findUnique({
@@ -26,7 +30,6 @@ const register = async (req, res, next) => {
             });
         }
         const hashedPassword = await bcryptjs_1.default.hash(password, 10);
-        const userRole = role === 'ADMIN' ? 'ADMIN' : 'STUDENT';
         const user = await prisma_1.prisma.user.create({
             data: {
                 name: name.trim(),
@@ -34,7 +37,7 @@ const register = async (req, res, next) => {
                 password: hashedPassword,
                 phone: phone ? phone.trim() : null,
                 targetExam: targetExam || 'Bihar Board Class 10th',
-                role: userRole,
+                role: 'STUDENT',
             },
             select: {
                 id: true,
@@ -68,7 +71,7 @@ exports.register = register;
 const login = async (req, res, next) => {
     try {
         const { email, password } = req.body;
-        if (!email || !password) {
+        if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
             return res.status(400).json({
                 success: false,
                 message: 'कृपया ईमेल और पासवर्ड दोनों दर्ज करें',

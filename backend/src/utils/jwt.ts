@@ -14,5 +14,10 @@ export const generateToken = (payload: TokenPayload): string => {
 };
 
 export const verifyToken = (token: string): TokenPayload => {
-  return jwt.verify(token, config.jwtSecret) as TokenPayload;
+  const payload = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] });
+  if (typeof payload === 'string' || typeof payload.userId !== 'string' ||
+      typeof payload.email !== 'string' || !['STUDENT', 'ADMIN'].includes(payload.role)) {
+    throw new jwt.JsonWebTokenError('Invalid token payload');
+  }
+  return payload as TokenPayload;
 };

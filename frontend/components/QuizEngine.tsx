@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useId } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { TestAttemptResult } from '../types';
 import {
   Clock,
   Flag,
@@ -19,9 +18,9 @@ import {
 } from 'lucide-react';
 
 export const QuizEngine: React.FC = () => {
-  const { activeTest, finishTestAttempt, setActiveTab, showToast } = useApp();
+  const { activeTest, submitTestAnswers, setActiveTab, showToast } = useApp();
 
-  const questions = activeTest?.questions || [];
+  const questions = useMemo(() => activeTest?.questions || [], [activeTest]);
   const totalQuestions = questions.length;
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -36,106 +35,65 @@ export const QuizEngine: React.FC = () => {
   const initialDuration = (activeTest?.durationMinutes || 10) * 60;
   const [remainingSeconds, setRemainingSeconds] = useState(initialDuration);
 
-  // Initialize/Reset test state whenever activeTest changes
-  useEffect(() => {
-    setCurrentIndex(0);
-    setSelectedAnswers({});
-    setMarkedForReview(new Set());
-    setVisited(new Set([0]));
-    setRemainingSeconds((activeTest?.durationMinutes || 10) * 60);
-    setShowSubmitModal(false);
-  }, [activeTest]);
+  const submitting = useRef(false);
+  const autoSubmitted = useRef(false);
+  const [submitError, setSubmitError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const deadline = (activeTest?.startedAt || 0) + initialDuration * 1000;
+  const navigateTo = useCallback((index: number) => {
+    setCurrentIndex(index);
+    setVisited(prev => new Set(prev).add(index));
+  }, []);
 
-  // Mark current as visited whenever currentIndex changes
-  useEffect(() => {
-    setVisited((prev) => new Set(prev).add(currentIndex));
-  }, [currentIndex]);
+  const handleSubmit = useCallback(async () => {
+    if (!activeTest || submitting.current) return;
+    submitting.current = true;
+    setIsSubmitting(true);
+    setSubmitError('');
+    try {
+      await submitTestAnswers(selectedAnswers, Array.from(markedForReview), Math.min(initialDuration, Math.max(0, initialDuration - remainingSeconds)));
+      // Keep the guard set until this quiz unmounts.
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Submission failed. Please retry.';
+      setSubmitError(message);
+      showToast(message, 'error');
+      submitting.current = false;
+    } finally { setIsSubmitting(false); }
+  }, [activeTest, submitTestAnswers, selectedAnswers, markedForReview, initialDuration, remainingSeconds, showToast]);
 
-  const handleSubmit = useCallback(() => {
+  useEffect(() => {
     if (!activeTest) return;
-
-    let correctCount = 0;
-    let wrongCount = 0;
-    let unansweredCount = 0;
-    let totalScore = 0;
-
-    questions.forEach((q, idx) => {
-      const selected = selectedAnswers[idx];
-      if (selected === undefined) {
-        unansweredCount++;
-      } else if (selected === q.correctOptionIndex) {
-        correctCount++;
-        totalScore += q.marks ?? 1;
-      } else {
-        wrongCount++;
-        totalScore -= q.negativeMarks ?? 0.25;
-      }
-    });
-
-    const maxScore = questions.reduce((acc, q) => acc + (q.marks ?? 1), 0);
-    const finalScore = Math.max(0, Number(totalScore.toFixed(2)));
-    const percentage = maxScore > 0 ? Math.round((finalScore / maxScore) * 100) : 0;
-    const timeSpent = initialDuration - remainingSeconds;
-
-    const attemptResult: TestAttemptResult = {
-      id: `att-${Date.now()}`,
-      testId: activeTest.id,
-      testTitle: activeTest.title,
-      timestamp: new Date().toISOString(),
-      totalQuestions,
-      attempted: Object.keys(selectedAnswers).length,
-      correct: correctCount,
-      wrong: wrongCount,
-      unanswered: unansweredCount,
-      score: finalScore,
-      maxScore,
-      percentage,
-      timeSpentSeconds: timeSpent,
-      answers: selectedAnswers,
-      markedQuestions: Array.from(markedForReview),
-      questions,
-    };
-
-    finishTestAttempt(attemptResult);
-  }, [activeTest, questions, selectedAnswers, markedForReview, initialDuration, remainingSeconds, totalQuestions, finishTestAttempt]);
-
-  // Countdown Timer
-  useEffect(() => {
-    if (remainingSeconds <= 0) {
-      handleSubmit();
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setRemainingSeconds((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          handleSubmit();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
+    const tick = () => setRemainingSeconds(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [remainingSeconds, handleSubmit]);
+  }, [activeTest, deadline]);
+
+  useEffect(() => {
+    if (activeTest && remainingSeconds === 0 && !autoSubmitted.current) {
+      autoSubmitted.current = true;
+      void handleSubmit();
+    }
+  }, [activeTest, remainingSeconds, handleSubmit]);
 
   // Keyboard navigation shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (showSubmitModal) return;
+      const target = e.target as HTMLElement;
+      if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (showSubmitModal || remainingSeconds <= 0 || isSubmitting) return;
       if (e.key === 'ArrowRight') {
-        if (currentIndex < totalQuestions - 1) setCurrentIndex((i) => i + 1);
+        if (currentIndex < totalQuestions - 1) navigateTo(currentIndex + 1);
       } else if (e.key === 'ArrowLeft') {
-        if (currentIndex > 0) setCurrentIndex((i) => i - 1);
+        if (currentIndex > 0) navigateTo(currentIndex - 1);
       } else if (['1', '2', '3', '4'].includes(e.key)) {
         const optIndex = parseInt(e.key, 10) - 1;
+        if (optIndex >= (questions[currentIndex]?.options.length || 0)) return;
         setSelectedAnswers((prev) => ({ ...prev, [currentIndex]: optIndex }));
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, totalQuestions, showSubmitModal]);
+  }, [currentIndex, totalQuestions, showSubmitModal, remainingSeconds, isSubmitting, navigateTo, questions]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -148,6 +106,7 @@ export const QuizEngine: React.FC = () => {
   };
 
   const handleSelectOption = (optionIndex: number) => {
+    if (remainingSeconds <= 0 || isSubmitting) return;
     setSelectedAnswers((prev) => ({
       ...prev,
       [currentIndex]: optionIndex,
@@ -155,6 +114,7 @@ export const QuizEngine: React.FC = () => {
   };
 
   const handleClearResponse = () => {
+    if (remainingSeconds <= 0 || isSubmitting) return;
     setSelectedAnswers((prev) => {
       const copy = { ...prev };
       delete copy[currentIndex];
@@ -337,7 +297,7 @@ export const QuizEngine: React.FC = () => {
                 return (
                   <button
                     key={idx}
-                    onClick={() => setCurrentIndex(idx)}
+                    onClick={() => navigateTo(idx)}
                     className={`relative h-10 rounded-xl text-xs flex items-center justify-center border transition-all ${badgeClass}`}
                   >
                     <span>{idx + 1}</span>
@@ -431,7 +391,7 @@ export const QuizEngine: React.FC = () => {
             <div className="hidden lg:flex pt-6 mt-6 border-t border-slate-100 items-center justify-between gap-2.5">
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
+                  onClick={() => navigateTo(Math.max(0, currentIndex - 1))}
                   disabled={currentIndex === 0}
                   className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:pointer-events-none rounded-xl transition-colors flex items-center gap-1.5"
                 >
@@ -466,7 +426,7 @@ export const QuizEngine: React.FC = () => {
               <div className="flex items-center gap-2">
                 {currentIndex < totalQuestions - 1 ? (
                   <button
-                    onClick={() => setCurrentIndex((prev) => prev + 1)}
+                    onClick={() => navigateTo(currentIndex + 1)}
                     className="px-5 py-2.5 bg-[#0966df] hover:bg-[#0b55bb] text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center gap-1.5"
                   >
                     <span>Save & Next</span>
@@ -492,7 +452,7 @@ export const QuizEngine: React.FC = () => {
       {/* Mobile Sticky Bottom Controls */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-2xl p-2.5 pb-safe flex items-center justify-between gap-2">
         <button
-          onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
+          onClick={() => navigateTo(Math.max(0, currentIndex - 1))}
           disabled={currentIndex === 0}
           className="px-3 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 disabled:opacity-30 disabled:pointer-events-none rounded-xl transition-colors flex items-center gap-1"
         >
@@ -522,7 +482,7 @@ export const QuizEngine: React.FC = () => {
 
         {currentIndex < totalQuestions - 1 ? (
           <button
-            onClick={() => setCurrentIndex((prev) => prev + 1)}
+            onClick={() => navigateTo(currentIndex + 1)}
             className="px-4 py-2 bg-[#0966df] hover:bg-[#0b55bb] text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1"
           >
             <span>Next</span>
@@ -605,7 +565,7 @@ export const QuizEngine: React.FC = () => {
                   <button
                     key={idx}
                     onClick={() => {
-                      setCurrentIndex(idx);
+                      navigateTo(idx);
                       setMobilePaletteOpen(false);
                     }}
                     className={`relative h-11 rounded-xl text-xs flex items-center justify-center border font-bold transition-all ${badgeClass}`}
@@ -632,6 +592,7 @@ export const QuizEngine: React.FC = () => {
         </div>
       )}
 
+      {submitError && <div role="alert" className="p-4 text-red-700 border border-red-300 rounded-xl">{submitError} <button disabled={isSubmitting} className="underline" onClick={() => void handleSubmit()}>Retry submission</button></div>}
       {/* Confirmation Submit Modal */}
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
@@ -672,10 +633,11 @@ export const QuizEngine: React.FC = () => {
                 रद्द करें (Back)
               </button>
               <button
-                onClick={handleSubmit}
+                disabled={isSubmitting}
+                onClick={() => void handleSubmit()}
                 className="flex-1 py-2.5 sm:py-3 text-xs font-black text-white bg-gradient-to-r from-[#ff7a18] to-[#ea580c] hover:brightness-105 rounded-xl shadow-md transition-all"
               >
-                हाँ, सबमिट करें
+                {isSubmitting ? 'Submitting…' : 'हाँ, सबमिट करें'}
               </button>
             </div>
           </div>

@@ -14,20 +14,21 @@ import { AdminQuestionManager } from '../components/AdminQuestionManager';
 import { AuthModal } from '../components/AuthModal';
 import { Footer } from '../components/Footer';
 import {
-  Layers,
   ArrowRight,
   Sparkles,
   BookOpen,
-  Filter,
-  CheckCircle2,
   Clock,
-  AlertCircle,
   X,
 } from 'lucide-react';
 
 export default function Home() {
   const {
     activeTab,
+    activeTest,
+    loading,
+    error,
+    refreshData,
+    authModalTab,
     setActiveTab,
     exams,
     practiceSets,
@@ -87,6 +88,8 @@ export default function Home() {
 
       {/* Main Content Area switching by activeTab */}
       <main className="flex-1 pb-16 md:pb-0">
+        {loading && <p role="status" className="p-6 text-center">Loading…</p>}
+        {error && <div role="alert" className="p-6 text-center text-red-700">Could not load the platform: {error} <button className="underline" onClick={() => void refreshData()}>Retry</button></div>}
         
         {/* TAB 1: HOME PAGE */}
         {activeTab === 'home' && (
@@ -253,7 +256,7 @@ export default function Home() {
                       </span>
                       <span>•</span>
                       <span className="font-medium">
-                        {test.questions.length} प्रश्न
+                        {test.questionCount ?? test.questions.length} प्रश्न
                       </span>
                       <span>•</span>
                       <span className="font-medium text-blue-700">
@@ -316,7 +319,7 @@ export default function Home() {
         )}
 
         {/* TAB 4: LIVE QUIZ ENGINE */}
-        {activeTab === 'quiz' && <QuizEngine />}
+        {activeTab === 'quiz' && (activeTest ? <QuizEngine key={`${activeTest.id}-${activeTest.startedAt}`} /> : <div className="p-12 text-center">Select a test to begin. <button className="underline" onClick={() => setActiveTab('tests')}>Browse tests</button></div>)}
 
         {/* TAB 5: TEST RESULT & DETAILED ANALYSIS */}
         {activeTab === 'result' && <ResultCard />}
@@ -330,7 +333,7 @@ export default function Home() {
       </main>
 
       {/* Auth Login/Signup Modal */}
-      <AuthModal />
+      <AuthModal key={authModalTab} />
 
       {/* Footer */}
       <Footer />
