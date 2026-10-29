@@ -29,6 +29,8 @@ export default function Home() {
     error,
     refreshData,
     authModalTab,
+    authAudience,
+    isAuthModalOpen,
     setActiveTab,
     exams,
     practiceSets,
@@ -333,7 +335,7 @@ export default function Home() {
       </main>
 
       {/* Auth Login/Signup Modal */}
-      <AuthModal key={authModalTab} />
+      {isAuthModalOpen && <AuthModal key={`${authModalTab}-${authAudience}`} />}
 
       {/* Footer */}
       <Footer />

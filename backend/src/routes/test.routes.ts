@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import {
   getTests,
+  getAdminTests,
+  setTestPublished,
   getTestById,
   createTest,
   deleteTest,
@@ -10,7 +12,9 @@ import { authenticate, requireAdmin } from '../middlewares/auth';
 const router = Router();
 
 router.get('/', getTests);
+router.get('/admin', authenticate, requireAdmin, getAdminTests);
 router.get('/:id', getTestById);
+router.patch('/:id', authenticate, requireAdmin, setTestPublished);
 router.post('/', authenticate, requireAdmin, createTest);
 router.delete('/:id', authenticate, requireAdmin, deleteTest);
 

@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { AdminTestsManager } from './AdminTestsManager';
+import { AdminRolesManager } from './AdminRolesManager';
 import { Question } from '../types';
 import {
   ShieldAlert,
@@ -20,9 +22,12 @@ export const AdminQuestionManager: React.FC = () => {
     addQuestionToBank,
     deleteQuestionFromBank,
     showToast,
-    tests,
+    adminTests,
+    authLoading,
   } = useApp();
 
+  const tests = adminTests;
+  const [saving, setSaving] = useState(false);
   const [category, setCategory] = useState('');
   const [subject, setSubject] = useState('General Science');
   const [questionText, setQuestionText] = useState('');
@@ -63,8 +68,12 @@ export const AdminQuestionManager: React.FC = () => {
       negativeMarks: Number(negativeMarks),
     };
 
+    if (saving) return;
     if (!category) { showToast('Select a test first.', 'error'); return; }
-    if (!await addQuestionToBank(newQuestion, category)) return;
+    setSaving(true);
+    const success = await addQuestionToBank(newQuestion, category);
+    setSaving(false);
+    if (!success) return;
 
     // Reset form fields
     setQuestionText('');
@@ -75,7 +84,11 @@ export const AdminQuestionManager: React.FC = () => {
     setExplanation('');
   };
 
-  if (currentUser?.role !== 'admin') return <div className="p-12 text-center"><h1 className="text-xl font-bold">Admin access required</h1><button className="underline mt-4" onClick={() => openAuthModal()}>Sign in</button></div>;
+  if (authLoading) return <p role="status" className="p-12 text-center">Checking your account…</p>;
+  if (currentUser?.role !== 'admin') return <div className="p-12 text-center space-y-4"><h1 className="text-xl font-bold">Admin access required</h1><p className="text-sm text-slate-600">{currentUser ? 'Your current account has the Student role. Ask an administrator to grant access.' : 'Sign in with your administrator email and password.'}</p><button className="rounded-xl bg-blue-700 px-5 py-3 font-bold text-white" onClick={() => openAuthModal('login', 'admin')}>Admin sign in</button></div>;
+  const selectedTest = tests.find(test => test.id === category);
+  const editable = Boolean(selectedTest && !selectedTest.isPublished && !selectedTest.attemptCount);
+  const visibleQuestions = category ? questions.filter(question => question.testId === category) : questions;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -110,6 +123,7 @@ export const AdminQuestionManager: React.FC = () => {
         </div>
       </div>
 
+      <AdminTestsManager selectedTestId={category} onSelectTest={setCategory} />
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Form: Add Question */}
@@ -121,20 +135,21 @@ export const AdminQuestionManager: React.FC = () => {
             </h2>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4 text-xs sm:text-sm">
+          <form aria-label="Add question" onSubmit={handleSubmit} className="space-y-4 text-xs sm:text-sm">
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">
+                <label htmlFor="question-test" className="block font-bold text-slate-700 mb-1">
                   परीक्षा / कैटेगरी (Test Category)
                 </label>
                 <select
+                  id="question-test"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 outline-none focus:border-blue-500 text-base sm:text-sm"
                 >
                   <option value="">Select a test</option>
-                  {tests.map(test => <option key={test.id} value={test.id}>{test.title}</option>)}
+                  {tests.map(test => <option key={test.id} value={test.id}>{test.title} {test.isPublished ? '(Published)' : '(Draft)'}</option>)}
                 </select>
               </div>
 
@@ -166,6 +181,7 @@ export const AdminQuestionManager: React.FC = () => {
               />
             </div>
 
+            {!editable && <p className="text-sm text-amber-800">{selectedTest?.attemptCount ? 'This test has saved attempts. Create a new draft to change its questions.' : selectedTest?.isPublished ? 'Unpublish this test before adding questions.' : 'Create or select a draft test above to add questions.'}</p>}
             {/* 4 Options Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -273,7 +289,8 @@ export const AdminQuestionManager: React.FC = () => {
 
             <button
               type="submit"
-              className="w-full py-3 bg-[#0966df] hover:bg-[#0b55bb] text-white font-extrabold rounded-xl shadow-md transition-colors flex items-center justify-center gap-2"
+              disabled={saving || !editable}
+              className="w-full py-3 bg-[#0966df] hover:bg-[#0b55bb] text-white font-extrabold rounded-xl shadow-md transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
             >
               <PlusCircle className="w-4 h-4" />
               <span>प्रश्न बैंक में जोड़ें (Add to Test Bank)</span>
@@ -288,7 +305,7 @@ export const AdminQuestionManager: React.FC = () => {
               <h2 className="text-base sm:text-lg font-black text-slate-900">
                 वर्तमान प्रश्न बैंक (Questions)
               </h2>
-              <p className="text-xs text-slate-500">कुल {questions.length} प्रश्न उपलब्ध हैं</p>
+              <p className="text-xs text-slate-500">कुल {visibleQuestions.length} प्रश्न उपलब्ध हैं</p>
             </div>
             <span className="p-2 rounded-xl bg-blue-50 text-blue-600">
               <Layers className="w-4 h-4" />
@@ -296,7 +313,7 @@ export const AdminQuestionManager: React.FC = () => {
           </div>
 
           <div className="space-y-3 overflow-y-auto max-h-[580px] pr-1">
-            {questions.map((q, idx) => (
+            {visibleQuestions.map((q, idx) => (
               <div
                 key={q.id || idx}
                 className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 hover:border-blue-300 transition-all text-xs space-y-2"
@@ -307,6 +324,7 @@ export const AdminQuestionManager: React.FC = () => {
                     {q.questionText}
                   </div>
                   <button
+                    disabled={Boolean(tests.find(test => test.id === q.testId)?.isPublished || tests.find(test => test.id === q.testId)?.attemptCount)}
                     onClick={() => deleteQuestionFromBank(q.id)}
                     className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
                     title="Remove Question"
@@ -331,6 +349,7 @@ export const AdminQuestionManager: React.FC = () => {
         </div>
 
       </div>
+      <AdminRolesManager />
 
     </div>
   );

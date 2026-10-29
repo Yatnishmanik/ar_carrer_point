@@ -12,7 +12,8 @@
     "prisma:push": "node scripts/prisma.cjs db push",
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:studio": "node scripts/prisma.cjs studio",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "admin:promote": "tsx src/scripts/promote-admin.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",

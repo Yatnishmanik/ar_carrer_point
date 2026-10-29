@@ -124,9 +124,9 @@ export const Navbar: React.FC = () => {
               {currentUser ? (
                 <div className="flex items-center gap-1.5 sm:gap-2">
                   <button
-                    onClick={() => handleNavClick('dashboard')}
+                    onClick={() => handleNavClick(currentUser?.role === 'admin' ? 'admin' : 'dashboard')}
                     className="flex items-center gap-1.5 sm:gap-2 pl-1.5 sm:pl-2 pr-2.5 sm:pr-3 py-1 sm:py-1.5 bg-blue-50/80 hover:bg-blue-100 border border-blue-200/70 rounded-xl text-xs font-semibold text-[#082f6b] transition-all"
-                    title="View Student Dashboard"
+                    title={currentUser.role === 'admin' ? 'View Admin Panel' : 'View Student Dashboard'}
                   >
                     <div className="w-6 h-6 rounded-lg bg-[#082f6b] text-white flex items-center justify-center text-xs font-bold">
                       {currentUser.name.charAt(0)}
@@ -350,7 +350,7 @@ export const Navbar: React.FC = () => {
           </button>
 
           <button
-            onClick={() => handleNavClick('dashboard')}
+            onClick={() => handleNavClick(currentUser?.role === 'admin' ? 'admin' : 'dashboard')}
             className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-xl transition-all ${
               activeTab === 'dashboard' ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-800'
             }`}

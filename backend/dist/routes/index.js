@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const user_routes_1 = __importDefault(require("./user.routes"));
 const auth_routes_1 = __importDefault(require("./auth.routes"));
 const exam_routes_1 = __importDefault(require("./exam.routes"));
 const test_routes_1 = __importDefault(require("./test.routes"));
@@ -13,6 +14,7 @@ const practice_routes_1 = __importDefault(require("./practice.routes"));
 const update_routes_1 = __importDefault(require("./update.routes"));
 const router = (0, express_1.Router)();
 router.use('/auth', auth_routes_1.default);
+router.use('/users', user_routes_1.default);
 router.use('/exams', exam_routes_1.default);
 router.use('/tests', test_routes_1.default);
 router.use('/questions', question_routes_1.default);

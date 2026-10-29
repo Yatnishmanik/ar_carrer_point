@@ -101,6 +101,10 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       });
     }
 
+    if (req.path === '/admin/login' && user.role !== 'ADMIN') {
+      return res.status(403).json({ success: false, message: 'This account does not have admin access. Use student login or contact an administrator.' });
+    }
+
     const token = generateToken({
       userId: user.id,
       email: user.email,

@@ -6,6 +6,7 @@ import app from '../src/app';
 import { prisma } from '../src/lib/prisma';
 import { generateToken } from '../src/utils/jwt';
 import { gradeAttempt } from '../src/utils/grading';
+import { promoteAdmin } from '../src/scripts/promote-admin';
 
 // Never run integration fixtures against an application database.
 const db = new URL(process.env.DATABASE_URL!);
@@ -21,6 +22,7 @@ let adminToken: string;
 let adminId: string;
 let testId: string;
 let hiddenTestId: string;
+let draftTestId: string;
 let questionId: string;
 let correctOptionId: string;
 let attemptId: string;
@@ -45,14 +47,14 @@ before(async () => {
   const admin = await prisma.user.create({ data: { name: 'Test Admin', email: `admin-${email}`, password: await bcrypt.hash(password, 10), role: 'ADMIN' } });
   adminId = admin.id;
   adminToken = generateToken({ userId: admin.id, email: admin.email, role: 'ADMIN' });
-  const test = await prisma.test.create({ data: { title: 'Integration Test', categoryName: 'Science', durationMinutes: 1 } });
+  const test = await prisma.test.create({ data: { title: 'Integration Test', categoryName: 'Science', durationMinutes: 1, isPublished: false } });
   testId = test.id;
   const hidden = await prisma.test.create({ data: { title: 'Draft', categoryName: 'Science', isPublished: false } });
   hiddenTestId = hidden.id;
 });
 
 after(async () => {
-  if (testId) await prisma.test.deleteMany({ where: { id: { in: [testId, hiddenTestId] } } });
+  if (testId) await prisma.test.deleteMany({ where: { id: { in: [testId, hiddenTestId, draftTestId].filter(Boolean) } } });
   await prisma.user.deleteMany({ where: { email: { in: [email, `admin-${email}`] } } });
   await prisma.$disconnect();
   if (server) await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve()));
@@ -93,6 +95,7 @@ describe('Authentication, authorization and test integrity', () => {
     assert.equal((await prisma.test.findUniqueOrThrow({ where: { id: testId } })).totalMarks, 2);
     assert.equal((await request('/questions', adminToken)).status, 200);
     assert.equal((await request('/questions', studentToken, { testId })).status, 403);
+    assert.equal((await request(`/tests/${testId}`, adminToken, { isPublished: true }, 'PATCH')).status, 200);
   });
 
   it('does not expose answer keys or explanations before submission and hides drafts', async () => {
@@ -176,4 +179,124 @@ describe('Authentication, authorization and test integrity', () => {
     assert.equal(result.passed, false);
     assert.equal(gradeAttempt([], [], 0).passed, false);
   });
+  it('distinguishes admin sign-in without letting students choose an admin role', async () => {
+    assert.equal((await request('/auth/admin/login', undefined, { email, password: 'wrong' })).status, 401);
+    const studentLogin = await request('/auth/admin/login', undefined, { email, password, role: 'ADMIN' });
+    assert.equal(studentLogin.status, 403);
+    assert.ok(!studentLogin.body.data?.token);
+    const adminLogin = await request('/auth/admin/login', undefined, { email: `admin-${email}`, password });
+    assert.equal(adminLogin.status, 200);
+    assert.equal(adminLogin.body.data.user.role, 'ADMIN');
+  });
+
+  it('requires admin access for test creation, draft listing and publishing', async () => {
+    for (const token of [undefined, studentToken]) {
+      const status = token ? 403 : 401;
+      assert.equal((await request('/tests/admin', token)).status, status);
+      assert.equal((await request('/tests', token, { title: 'Forbidden', categoryName: 'Science' })).status, status);
+      assert.equal((await request(`/tests/${testId}`, token, { isPublished: false }, 'PATCH')).status, status);
+    }
+    assert.equal((await request('/tests/admin', adminToken)).status, 200);
+  });
+
+  it('validates test creation and always creates a private draft with computed marks', async () => {
+    for (const body of [
+      { title: '', categoryName: 'Science' }, { title: 'X', categoryName: 'Science', durationMinutes: 0 },
+      { title: 'X', categoryName: 'Science', durationMinutes: 1.5 }, { title: 'X', categoryName: 'Science', passingMarks: -1 },
+      { title: 'X', categoryName: 'Science', instructions: [false] }, { title: 'X', categoryId: 'missing' },
+    ]) assert.equal((await request('/tests', adminToken, body)).status, 400);
+    const created = await request('/tests', adminToken, { title: 'Admin draft workflow', categoryName: 'Custom exam', durationMinutes: 20, passingMarks: 2, totalMarks: 999, isPublished: true });
+    assert.equal(created.status, 201);
+    draftTestId = created.body.data.id;
+    assert.equal(created.body.data.isPublished, false);
+    assert.equal(created.body.data.totalMarks, 0);
+    assert.equal(created.body.data.questionCount, 0);
+    assert.equal((await request(`/tests/${draftTestId}`)).status, 404);
+    assert.ok(!(await request('/tests')).body.data.some((test: { id: string }) => test.id === draftTestId));
+    assert.ok((await request('/tests/admin', adminToken)).body.data.some((test: { id: string }) => test.id === draftTestId));
+    assert.equal((await request(`/tests/${draftTestId}`, adminToken, { isPublished: true }, 'PATCH')).status, 400);
+  });
+
+  it('supports the full draft, question, publish and student attempt workflow', async () => {
+    const question = { testId: draftTestId, questionText: 'Which is correct?', marks: 1, negativeMarks: 0,
+      options: [{ text: 'Yes', isCorrect: true }, { text: 'No', isCorrect: false }] };
+    const first = await request('/questions', adminToken, question);
+    assert.equal(first.status, 201);
+    // The requested pass mark is higher than this unfinished draft's total.
+    assert.equal((await request(`/tests/${draftTestId}`, adminToken, { isPublished: true }, 'PATCH')).status, 400);
+    const second = await request('/questions', adminToken, { ...question, questionText: 'Second question' });
+    assert.equal(second.status, 201);
+    const published = await request(`/tests/${draftTestId}`, adminToken, { isPublished: true }, 'PATCH');
+    assert.equal(published.status, 200);
+    assert.equal(published.body.data.totalMarks, 2);
+    assert.equal(published.body.data.questionCount, 2);
+    const publicTest = await request(`/tests/${draftTestId}`);
+    assert.equal(publicTest.status, 200);
+    assert.ok(publicTest.body.data.questions.every((q: { options: object[] }) => q.options.every(o => !('isCorrect' in o))));
+    assert.equal((await request('/questions', adminToken, question)).status, 409);
+    assert.equal((await request(`/questions/${first.body.data.id}`, adminToken, undefined, 'DELETE')).status, 409);
+    const submitted = await request('/attempts', studentToken, { testId: draftTestId, timeSpentSeconds: 10,
+      answers: [first, second].map(r => ({ questionId: r.body.data.id, selectedOptionId: r.body.data.options.find((o: { isCorrect: boolean }) => o.isCorrect).id })) });
+    assert.equal(submitted.status, 201);
+    assert.equal(submitted.body.data.score, 2);
+    assert.equal(submitted.body.data.passed, true);
+    assert.equal((await request(`/tests/${draftTestId}`, adminToken, { isPublished: false }, 'PATCH')).status, 200);
+    assert.equal((await request(`/tests/${draftTestId}`)).status, 404);
+    assert.equal((await request('/questions', adminToken, question)).status, 409);
+  });
+
+  it('keeps user roles admin-only and never returns password hashes', async () => {
+    assert.equal((await request('/users')).status, 401);
+    assert.equal((await request('/users', studentToken)).status, 403);
+    assert.equal((await request(`/users/${studentId}/role`, studentToken, { role: 'ADMIN' }, 'PATCH')).status, 403);
+    const users = await request(`/users?search=${encodeURIComponent(email)}`, adminToken);
+    assert.equal(users.status, 200);
+    assert.ok(users.body.data.length >= 2);
+    assert.ok(users.body.data.every((user: object) => !('password' in user)));
+    assert.equal((await request(`/users/${studentId}/role`, adminToken, { role: 'OWNER' }, 'PATCH')).status, 400);
+    assert.equal((await request(`/users/${adminId}/role`, adminToken, { role: 'STUDENT' }, 'PATCH')).status, 409);
+  });
+
+  it('grants and revokes admin roles with immediate effect on existing sessions', async () => {
+    assert.equal((await request(`/users/${studentId}/role`, adminToken, { role: 'ADMIN' }, 'PATCH')).status, 200);
+    assert.equal((await request('/tests/admin', studentToken)).status, 200);
+    const login = await request('/auth/admin/login', undefined, { email, password });
+    assert.equal(login.status, 200);
+    assert.equal((await request(`/users/${studentId}/role`, adminToken, { role: 'STUDENT' }, 'PATCH')).status, 200);
+    assert.equal((await request('/tests/admin', login.body.data.token)).status, 403);
+    assert.equal((await request('/auth/me', login.body.data.token)).body.data.role, 'STUDENT');
+  });
+
+  it('promotes an existing account from the operator command without resetting its password', async () => {
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: studentId } });
+    await promoteAdmin(` ${email.toUpperCase()} `);
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: studentId } });
+    assert.equal(after.role, 'ADMIN');
+    assert.equal(after.password, before.password);
+    assert.equal((await request('/auth/admin/login', undefined, { email, password })).status, 200);
+    await prisma.user.update({ where: { id: studentId }, data: { role: 'STUDENT' } });
+    await assert.rejects(() => promoteAdmin('invalid-email'));
+  });
+
+  it('preserves saved results when an admin requests test deletion', async () => {
+    assert.equal((await request(`/tests/${testId}`, adminToken, undefined, 'DELETE')).status, 409);
+    assert.equal((await request(`/attempts/${attemptId}`, studentToken)).status, 200);
+  });
+
+  it('serializes simultaneous role revocations without letting a revoked admin keep changing roles', async () => {
+    await prisma.user.update({ where: { id: studentId }, data: { role: 'ADMIN' } });
+    const otherAdminToken = generateToken({ userId: studentId, email, role: 'ADMIN' });
+    try {
+      const results = await Promise.all([
+        request(`/users/${studentId}/role`, adminToken, { role: 'STUDENT' }, 'PATCH'),
+        request(`/users/${adminId}/role`, otherAdminToken, { role: 'STUDENT' }, 'PATCH'),
+      ]);
+      assert.equal(results.filter(result => result.status === 200).length, 1);
+      assert.ok(results.some(result => result.status === 403 || result.status === 409));
+    } finally {
+      await prisma.user.update({ where: { id: adminId }, data: { role: 'ADMIN' } });
+      await prisma.user.update({ where: { id: studentId }, data: { role: 'STUDENT' } });
+    }
+  });
+
 });

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getAllQuestions = exports.deleteQuestion = exports.addQuestion = void 0;
 const prisma_1 = require("../lib/prisma");
+const transaction_1 = require("../utils/transaction");
 const addQuestion = async (req, res, next) => {
     try {
         const { testId, questionText, subject, explanation, marks = 1.0, negativeMarks = 0.25, options, // array of { text: string, isCorrect: boolean }
@@ -20,7 +21,14 @@ const addQuestion = async (req, res, next) => {
                 message: 'Provide a question, positive marks, non-negative penalty, and at least two options with exactly one correct answer.',
             });
         }
-        const createdQuestion = await prisma_1.prisma.$transaction(async (tx) => {
+        const createdQuestion = await (0, transaction_1.serializable)(async (tx) => {
+            if (testId) {
+                const test = await tx.test.findUnique({ where: { id: testId }, include: { _count: { select: { attempts: true } } } });
+                if (!test)
+                    throw Object.assign(new Error('Test not found.'), { status: 404 });
+                if (test.isPublished || test._count.attempts)
+                    throw Object.assign(new Error('Questions can only be added to unpublished tests without previous attempts.'), { status: 409 });
+            }
             const created = await tx.question.create({
                 data: {
                     testId: testId || null,
@@ -69,12 +77,17 @@ const deleteQuestion = async (req, res, next) => {
     try {
         const rawId = req.params.id;
         const id = String(Array.isArray(rawId) ? rawId[0] : rawId);
-        await prisma_1.prisma.$transaction(async (tx) => {
+        await (0, transaction_1.serializable)(async (tx) => {
             const existing = await tx.question.findUnique({ where: { id }, include: { _count: { select: { userAnswers: true } } } });
             if (!existing)
                 throw Object.assign(new Error('Question not found'), { status: 404 });
             if (existing._count.userAnswers)
                 throw Object.assign(new Error('Questions used in submitted tests cannot be deleted.'), { status: 409 });
+            if (existing.testId) {
+                const test = await tx.test.findUnique({ where: { id: existing.testId }, include: { _count: { select: { attempts: true } } } });
+                if (test?.isPublished || test?._count.attempts)
+                    throw Object.assign(new Error('Unpublish the test first. Tests with previous attempts cannot change questions.'), { status: 409 });
+            }
             await tx.question.delete({ where: { id } });
             if (existing.testId)
                 await tx.test.update({ where: { id: existing.testId }, data: { totalMarks: { decrement: existing.marks } } });

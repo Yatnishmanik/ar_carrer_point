@@ -93,6 +93,9 @@ const login = async (req, res, next) => {
                 message: 'गलत ईमेल या पासवर्ड (Invalid email or password)',
             });
         }
+        if (req.path === '/admin/login' && user.role !== 'ADMIN') {
+            return res.status(403).json({ success: false, message: 'This account does not have admin access. Use student login or contact an administrator.' });
+        }
         const token = (0, jwt_1.generateToken)({
             userId: user.id,
             email: user.email,

@@ -45,6 +45,8 @@ export interface PracticeSet {
 }
 
 export interface Test {
+  isPublished?: boolean;
+  attemptCount?: number;
   startedAt?: number;
   categoryId?: string;
   questionCount?: number;

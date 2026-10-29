@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../lib/prisma';
+import { serializable } from '../utils/transaction';
 
 export const addQuestion = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -28,7 +29,12 @@ export const addQuestion = async (req: Request, res: Response, next: NextFunctio
       });
     }
 
-    const createdQuestion = await prisma.$transaction(async tx => {
+    const createdQuestion = await serializable(async tx => {
+      if (testId) {
+        const test = await tx.test.findUnique({ where: { id: testId }, include: { _count: { select: { attempts: true } } } });
+        if (!test) throw Object.assign(new Error('Test not found.'), { status: 404 });
+        if (test.isPublished || test._count.attempts) throw Object.assign(new Error('Questions can only be added to unpublished tests without previous attempts.'), { status: 409 });
+      }
       const created = await tx.question.create({
         data: {
           testId: testId || null,
@@ -80,10 +86,14 @@ export const deleteQuestion = async (req: Request, res: Response, next: NextFunc
     const rawId = req.params.id;
     const id = String(Array.isArray(rawId) ? rawId[0] : rawId);
 
-    await prisma.$transaction(async tx => {
+    await serializable(async tx => {
       const existing = await tx.question.findUnique({ where: { id }, include: { _count: { select: { userAnswers: true } } } });
       if (!existing) throw Object.assign(new Error('Question not found'), { status: 404 });
       if (existing._count.userAnswers) throw Object.assign(new Error('Questions used in submitted tests cannot be deleted.'), { status: 409 });
+      if (existing.testId) {
+        const test = await tx.test.findUnique({ where: { id: existing.testId }, include: { _count: { select: { attempts: true } } } });
+        if (test?.isPublished || test?._count.attempts) throw Object.assign(new Error('Unpublish the test first. Tests with previous attempts cannot change questions.'), { status: 409 });
+      }
       await tx.question.delete({ where: { id } });
       if (existing.testId) await tx.test.update({ where: { id: existing.testId }, data: { totalMarks: { decrement: existing.marks } } });
     });

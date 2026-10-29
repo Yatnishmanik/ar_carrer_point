@@ -41,6 +41,27 @@ npm run dev
 
 Visit `http://localhost:3000`. `NEXT_PUBLIC_API_URL` defaults to `http://localhost:5000/api`; set it before building a deployment. Set backend `FRONTEND_URL` to the deployed frontend origin. Session tokens are stored in browser session storage and verified by the API; passwords and answer keys are not used for client-side grading. Reloading the dashboard loads saved history from PostgreSQL. Use **View Result** to reopen an earlier answer review.
 
+## Admin access and creating tests
+
+Public registration creates a student account. For the first admin, register your own email through the website, then run this from `backend/` with the correct database environment:
+
+```powershell
+npm run admin:promote -- your-email@example.com
+```
+
+This operator command promotes an existing account and keeps its existing password. It does not create a public admin-signup route. Open `/admin`, click **Admin sign in**, and use that email and password. An admin login opens the admin panel; a student login opens the student dashboard. A student cannot access admin API routes, even if they edit browser state.
+
+An existing admin can use **User roles** to search registered accounts and grant/revoke admin access. Your own role cannot be changed from this screen. Permissions are checked against the current database role on every authenticated request, and the browser rechecks its account on focus or authorization errors.
+
+To create a test:
+
+1. Enter its title, category, duration, optional passing marks and instructions, then click **Create draft test**.
+2. The new draft is selected automatically. Add its questions and select the correct option for each.
+3. Click **Publish** in the test list. Drafts and empty tests are hidden from students. Publication checks the question keys and passing marks against the computed total.
+4. Unpublish a test before changing questions. Once students have submitted attempts, its questions are locked to preserve saved reviews; create a new draft for a revised paper.
+
+No database schema change is required for these admin features.
+
 ## Validation
 
 ```powershell

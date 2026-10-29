@@ -5,9 +5,11 @@ import { useApp } from '../context/AppContext';
 import { X, Lock, Mail, User, GraduationCap } from 'lucide-react';
 
 export const AuthModal: React.FC = () => {
-  const { isAuthModalOpen, closeAuthModal, authModalTab, loginUser, showToast } = useApp();
+  const { isAuthModalOpen, closeAuthModal, authModalTab, authAudience, loginUser, showToast } = useApp();
 
   const [mode, setMode] = useState<'login' | 'signup'>(authModalTab);
+  const isAdmin = authAudience === 'admin';
+  const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,9 +25,9 @@ export const AuthModal: React.FC = () => {
       return;
     }
     if (busy) return;
-    setBusy(true);
-    try { await loginUser(email.trim(), password, mode === 'signup' ? name.trim() : undefined, targetExam); }
-    catch (error) { showToast(error instanceof Error ? error.message : 'Login failed', 'error'); }
+    setBusy(true); setFormError('');
+    try { await loginUser(email.trim(), password, mode === 'signup' ? name.trim() : undefined, targetExam, authAudience); }
+    catch (error) { setFormError(error instanceof Error ? error.message : 'Login failed'); }
     finally { setBusy(false); }
   };
 
@@ -36,6 +38,7 @@ export const AuthModal: React.FC = () => {
         
         {/* Close Button */}
         <button
+          aria-label="Close sign in"
           onClick={closeAuthModal}
           className="absolute right-4 top-4 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
         >
@@ -48,7 +51,7 @@ export const AuthModal: React.FC = () => {
             AR
           </div>
           <h2 className="text-xl font-black text-slate-900">
-            {mode === 'login' ? 'Student Login' : 'Create Free Account'}
+            {isAdmin ? 'Admin Login' : mode === 'login' ? 'Student Login' : 'Create Free Account'}
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             AR Career Point ऑनलाइन टेस्ट व रिजल्ट पोर्टल
@@ -56,7 +59,7 @@ export const AuthModal: React.FC = () => {
         </div>
 
         {/* Tab Toggle */}
-        <div className="flex p-1 bg-slate-100 rounded-2xl mb-4 text-xs font-bold">
+        {!isAdmin && <div className="flex p-1 bg-slate-100 rounded-2xl mb-4 text-xs font-bold">
           <button
             onClick={() => setMode('login')}
             className={`flex-1 py-2 rounded-xl transition-all ${
@@ -73,10 +76,12 @@ export const AuthModal: React.FC = () => {
           >
             Sign Up
           </button>
-        </div>
+        </div>}
+        {isAdmin && <p className="mb-4 text-sm text-slate-600">Sign in with an administrator account. A student account cannot access this panel.</p>}
+        {formError && <p role="alert" className="mb-4 text-sm text-red-700">{formError}</p>}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-3 text-xs sm:text-sm">
+        <form aria-label={isAdmin ? 'Admin login' : 'Student authentication'} onSubmit={handleSubmit} className="space-y-3 text-xs sm:text-sm">
           {mode === 'signup' && (
             <div>
               <label htmlFor="auth-name" className="block font-bold text-slate-700 mb-1">पूरा नाम (Full Name)</label>
