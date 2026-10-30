@@ -48,6 +48,19 @@ export interface ApiResult {
   score: number; maxScore: number; percentage: number; correctCount: number; incorrectCount: number;
   unansweredCount: number; timeSpentSeconds: number; questionReview: ApiReview[];
 }
+export interface ScoreboardAttempt {
+  id: string; score: number; maxScore: number; percentage: number; passed: boolean;
+  timeSpentSeconds: number; createdAt: string; correctCount: number; incorrectCount: number; unansweredCount: number;
+}
+export interface LeaderboardEntry {
+  rank: number; name: string; score: number; maxScore: number; percentage: number; passed: boolean;
+  timeSpentSeconds: number; createdAt: string; isYou: boolean;
+}
+export interface ApiScoreboard {
+  test: { id: string; title: string; durationMinutes: number }; hasAttempted: boolean;
+  attemptCount: number; latestAttempt: ScoreboardAttempt | null; attempts: ScoreboardAttempt[];
+  leaderboard: LeaderboardEntry[]; yourBest: LeaderboardEntry | null; participantCount: number;
+}
 export interface ApiStoredAttempt {
   id: string; testId: string; createdAt: string; score: number; maxScore: number; percentage: number;
   correctCount: number; incorrectCount: number; unansweredCount: number; timeSpentSeconds: number;
@@ -63,6 +76,7 @@ export const apiService = {
   updateUserRole: (id: string, role: ApiUser['role']) => fetchFromBackend<ApiUser>(`/users/${encodeURIComponent(id)}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }),
   adminLogin: (data: { email: string; password: string }) => post<{ user: ApiUser; token: string }>('/auth/admin/login', data),
   getTests: () => fetchFromBackend<ApiTest[]>('/tests'),
+  getTestScoreboard: (id: string, signal?: AbortSignal) => fetchFromBackend<ApiScoreboard>(`/tests/${encodeURIComponent(id)}/scoreboard`, { signal }),
   getTestById: (id: string) => fetchFromBackend<ApiTest>(`/tests/${encodeURIComponent(id)}`),
   getPracticeSets: () => fetchFromBackend<PracticeSet[]>('/practice'),
   getUpdates: () => fetchFromBackend<NoticeUpdate[]>('/updates'),

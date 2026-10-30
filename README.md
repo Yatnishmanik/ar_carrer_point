@@ -62,6 +62,16 @@ To create a test:
 
 No database schema change is required for these admin features.
 
+## Completed tests and leaderboard
+
+A signed-in student's first visit to a test starts the quiz as before. Selecting a test they have already submitted opens a results dialog: their latest score, pass/fail result, attempt date, time taken and recent history appear on the left, with a student leaderboard on the right. The layout stacks vertically on phones.
+
+Use **View result** to review an owned attempt or **Retry test** to start with fresh answers and a new timer. Results also include a **Leaderboard & your attempts** button. Opening results never creates another attempt. Retry keeps all earlier attempts.
+
+The leaderboard lists the top 20 current student accounts, using one best attempt per student. Scores rank descending; ties use faster completion time, then the earlier attempt, with an internal ID as the final deterministic tie-breaker. Admin and guest attempts are excluded. Your best rank is shown even when it falls outside the top 20. Your latest 10 attempts are included in the dialog; older history remains in the dashboard. Dates use the browser's local time zone.
+
+The authenticated `GET /api/tests/:id/scoreboard` endpoint only returns other student rankings after the caller has attempted that published test. It exposes display names and score summaries, without other users' emails, account IDs, attempt IDs or answers. The normal attempt-detail endpoint retains its ownership checks. Ranking and personal summaries use a single consistent database snapshot. No database schema migration is required.
+
 ## Validation
 
 ```powershell

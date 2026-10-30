@@ -11,6 +11,7 @@ import { QuizEngine } from '../components/QuizEngine';
 import { ResultCard } from '../components/ResultCard';
 import { StudentDashboardView } from '../components/StudentDashboardView';
 import { AdminQuestionManager } from '../components/AdminQuestionManager';
+import { TestScoreboardDialog } from '../components/TestScoreboardDialog';
 import { AuthModal } from '../components/AuthModal';
 import { Footer } from '../components/Footer';
 import {
@@ -24,6 +25,9 @@ import {
 export default function Home() {
   const {
     activeTab,
+    testScoreboard,
+    startingTestId,
+    attemptsHistory,
     activeTest,
     loading,
     error,
@@ -272,10 +276,11 @@ export default function Home() {
                       नेगेटिव मार्किंग: 0.25
                     </span>
                     <button
+                      disabled={startingTestId === test.id}
                       onClick={() => startTestById(test.id)}
                       className="px-4 py-2 bg-[#0966df] hover:bg-[#0b55bb] text-white text-xs font-extrabold rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
                     >
-                      <span>Start Test</span>
+                      <span>{startingTestId === test.id ? 'Opening…' : attemptsHistory.some(attempt => attempt.testId === test.id) ? 'Scoreboard / Retry' : 'Start Test'}</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -333,6 +338,8 @@ export default function Home() {
         {activeTab === 'admin' && <AdminQuestionManager />}
 
       </main>
+
+      {testScoreboard && <TestScoreboardDialog key={testScoreboard.test.id} initialData={testScoreboard} />}
 
       {/* Auth Login/Signup Modal */}
       {isAuthModalOpen && <AuthModal key={`${authModalTab}-${authAudience}`} />}

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 export const ResultCard: React.FC = () => {
-  const { currentResult, retakeCurrentTest, setActiveTab } = useApp();
+  const { currentResult, retakeCurrentTest, setActiveTab, startTestById } = useApp();
   const [showAnswerKey, setShowAnswerKey] = useState(true);
 
   if (!currentResult) {
@@ -195,6 +195,7 @@ export const ResultCard: React.FC = () => {
               </div>
             </div>
 
+            <button type="button" onClick={() => void startTestById(currentResult.testId)} className="mt-4 text-sm font-bold text-blue-700 underline">Leaderboard &amp; your attempts</button>
             {/* Quick Action Buttons */}
             <div className="pt-3 sm:pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
               <button

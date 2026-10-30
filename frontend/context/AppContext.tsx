@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ExamCategory, NoticeUpdate, PracticeSet, Question, Test, TestAttemptResult, UserProfile } from '../types';
-import { apiService, getToken, setToken, ApiError, type ApiQuestion, type ApiTest, type ApiStoredAttempt, type ApiUser } from '../lib/api';
+import { apiService, getToken, setToken, ApiError, type ApiQuestion, type ApiTest, type ApiStoredAttempt, type ApiUser, type ApiScoreboard } from '../lib/api';
 
 interface AppContextType {
   activeTab: string; setActiveTab: (tab: string) => void;
@@ -15,7 +15,8 @@ interface AppContextType {
   authLoading: boolean; authAudience: 'student' | 'admin';
   adminTests: Test[]; refreshAdminData: () => Promise<void>;
   loading: boolean; error: string | null;
-  startTestById: (id?: string) => Promise<void>;
+  testScoreboard: ApiScoreboard | null; closeTestScoreboard: () => void; startingTestId: string | null;
+  startTestById: (id?: string, retry?: boolean) => Promise<void>;
   submitTestAnswers: (answers: Record<number, number>, marked: number[], seconds: number) => Promise<void>;
   reviewAttempt: (id: string) => Promise<void>;
   addQuestionToBank: (q: Question, testId?: string) => Promise<boolean>;
@@ -59,6 +60,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [tests, setTests] = useState<Test[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [updates, setUpdates] = useState<NoticeUpdate[]>([]);
+  const [testScoreboard, setTestScoreboard] = useState<ApiScoreboard | null>(null);
+  const [startingTestId, setStartingTestId] = useState<string | null>(null);
+  const testLaunch = useRef(0);
   const [activeTest, setActiveTest] = useState<Test | null>(null);
   const [currentResult, setCurrentResult] = useState<TestAttemptResult | null>(null);
   const [attemptsHistory, setAttemptsHistory] = useState<TestAttemptResult[]>([]);
@@ -117,14 +121,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (u.role !== 'ADMIN') { setQuestions([]); setAdminTests([]); }
       }).catch(e => {
         if (version === authVersion.current && e instanceof ApiError && e.status === 401) {
-          authVersion.current++; setToken(null); setCurrentUser(null); setQuestions([]); setAdminTests([]); setAttemptsHistory([]); setActiveTest(null); setCurrentResult(null);
+          authVersion.current++; setToken(null); setCurrentUser(null); setQuestions([]); setAdminTests([]); setAttemptsHistory([]); setActiveTest(null); setCurrentResult(null); setTestScoreboard(null); setStartingTestId(null);
         }
       });
     };
     const onAuthStatus = (event: Event) => {
       // Avoid a loop when /auth/me itself rejects an expired token.
       if ((event as CustomEvent<number>).detail === 401) {
-        authVersion.current++; setToken(null); setCurrentUser(null); setQuestions([]); setAdminTests([]); setAttemptsHistory([]); setActiveTest(null); setCurrentResult(null);
+        authVersion.current++; setToken(null); setCurrentUser(null); setQuestions([]); setAdminTests([]); setAttemptsHistory([]); setActiveTest(null); setCurrentResult(null); setTestScoreboard(null); setStartingTestId(null);
       } else revalidate();
     };
     window.addEventListener('focus', revalidate);
@@ -138,26 +142,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const version = ++authVersion.current;
     const result = audience === 'admin' ? await apiService.adminLogin({ email, password }) : name === undefined ? await apiService.login({ email, password }) : await apiService.register({ email, password, name, targetExam });
     if (version !== authVersion.current) return;
-    setToken(result.token); setAttemptsHistory([]); setQuestions([]); setAdminTests([]); setActiveTest(null); setCurrentResult(null);
+    setToken(result.token); setAttemptsHistory([]); setQuestions([]); setAdminTests([]); setActiveTest(null); setCurrentResult(null); setTestScoreboard(null); setStartingTestId(null);
     setCurrentUser(toUser(result.user)); setAuthLoading(false); setIsAuthModalOpen(false); setActiveTab(result.user.role === 'ADMIN' ? 'admin' : 'dashboard'); showToast(`Welcome, ${result.user.name}`, 'success');
   };
   const logoutUser = () => {
-    authVersion.current++; setToken(null); setCurrentUser(null); setAttemptsHistory([]); setQuestions([]); setAdminTests([]); setActiveTest(null); setCurrentResult(null); setActiveTab('home');
+    authVersion.current++; setToken(null); setCurrentUser(null); setAttemptsHistory([]); setQuestions([]); setAdminTests([]); setActiveTest(null); setCurrentResult(null); setTestScoreboard(null); setStartingTestId(null); setActiveTab('home');
   };
-  const startTestById = async (id?: string) => {
+  const closeTestScoreboard = () => { testLaunch.current++; setTestScoreboard(null); setStartingTestId(null); };
+  const startTestById = async (id?: string, retry = false) => {
     if (!currentUser) { openAuthModal(); return; }
     const testId = id || tests[0]?.id;
     if (!testId) { showToast('No published test is available yet.', 'info'); return; }
+    const request = ++testLaunch.current;
+    const version = authVersion.current;
+    const isCurrent = () => request === testLaunch.current && version === authVersion.current;
+    setStartingTestId(testId);
     try {
+      if (!retry) {
+        const summary = await apiService.getTestScoreboard(testId);
+        if (!isCurrent()) return;
+        if (summary.hasAttempted) { setTestScoreboard(summary); return; }
+      }
       const test = toTest(await apiService.getTestById(testId));
+      if (!isCurrent()) return;
       if (!test.questions.length) throw new Error('This test has no questions yet.');
-      setActiveTest({ ...test, startedAt: Date.now() }); setCurrentResult(null); setActiveTab('quiz');
-    } catch (e) { showToast(messageOf(e), 'error'); }
+      setTestScoreboard(null); setActiveTest({ ...test, startedAt: Date.now() }); setCurrentResult(null); setActiveTab('quiz');
+    } catch (e) { if (isCurrent()) showToast(messageOf(e), 'error'); }
+    finally { if (isCurrent()) setStartingTestId(null); }
   };
   const submitTestAnswers = async (answers: Record<number, number>, marked: number[], seconds: number) => {
     if (!activeTest || !currentUser) throw new Error('Please sign in and select a test.');
+    const version = authVersion.current;
     const result = await apiService.submitAttempt({ testId: activeTest.id, timeSpentSeconds: seconds,
       answers: Object.entries(answers).map(([index, option]) => ({ questionId: activeTest.questions[Number(index)].id, selectedOptionId: activeTest.questions[Number(index)].options[option].id })) });
+    if (version !== authVersion.current) return;
     const reviewAnswers: Record<number, number> = {};
     const reviewQuestions = result.questionReview.map((q, i) => {
       const selected = q.options.findIndex(o => o.id === q.userSelectedOptionId);
@@ -169,12 +187,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       correct: result.correctCount, wrong: result.incorrectCount, unanswered: result.unansweredCount, score: result.score,
       maxScore: result.maxScore, percentage: result.percentage, timeSpentSeconds: result.timeSpentSeconds,
       answers: reviewAnswers, markedQuestions: marked, questions: reviewQuestions };
-    setCurrentResult(attempt); setAttemptsHistory(prev => [attempt, ...prev.filter(a => a.id !== attempt.id)]);
+    closeTestScoreboard(); setCurrentResult(attempt); setAttemptsHistory(prev => [attempt, ...prev.filter(a => a.id !== attempt.id)]);
     setActiveTab('result'); showToast('Test submitted successfully.', 'success');
   };
   const reviewAttempt = async (id: string) => {
-    try { setCurrentResult(toAttempt(await apiService.getAttemptById(id))); setActiveTab('result'); }
-    catch (e) { showToast(messageOf(e), 'error'); }
+    const version = authVersion.current;
+    try {
+      const attempt = await apiService.getAttemptById(id);
+      if (version !== authVersion.current) return;
+      closeTestScoreboard(); setCurrentResult(toAttempt(attempt)); setActiveTab('result');
+    } catch (e) { if (version === authVersion.current) showToast(messageOf(e), 'error'); }
   };
   const addQuestionToBank = async (q: Question, testId?: string) => {
     try {
@@ -188,9 +210,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
   return <AppContext.Provider value={{ activeTab, setActiveTab, searchQuery, setSearchQuery, exams, practiceSets, tests, questions, updates,
     activeTest, currentResult, attemptsHistory, currentUser, isAuthModalOpen, authModalTab, toast, loading, error, authLoading, authAudience, adminTests, refreshAdminData,
-    startTestById, submitTestAnswers, reviewAttempt, addQuestionToBank, deleteQuestionFromBank, openAuthModal,
+    testScoreboard, closeTestScoreboard, startingTestId, startTestById, submitTestAnswers, reviewAttempt, addQuestionToBank, deleteQuestionFromBank, openAuthModal,
     closeAuthModal: () => setIsAuthModalOpen(false), loginUser, logoutUser, showToast,
-    hideToast: () => setToast(t => ({ ...t, show: false })), retakeCurrentTest: () => { void startTestById(activeTest?.id || currentResult?.testId); }, refreshData,
+    hideToast: () => setToast(t => ({ ...t, show: false })), retakeCurrentTest: () => { void startTestById(currentResult?.testId || activeTest?.id, true); }, refreshData,
   }}>{children}</AppContext.Provider>;
 }
 export const useApp = () => {
