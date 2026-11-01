@@ -1,0 +1,26 @@
+[
+  {
+    "question": "Which planet is known as the \"Red Planet\"?",
+    "optionA": "Earth",
+    "optionB": "Mars",
+    "optionC": "Jupiter",
+    "optionD": "Saturn",
+    "correctAnswer": "B",
+    "subject": "Science",
+    "explanation": "Mars appears red because its surface contains iron oxide, also known as rust.",
+    "marks": 1,
+    "negativeMarks": 0.25
+  },
+  {
+    "question": "2 + 2 का मान क्या है?",
+    "optionA": "3",
+    "optionB": "4",
+    "optionC": "5",
+    "optionD": "6",
+    "correctAnswer": "B",
+    "subject": "गणित",
+    "explanation": "दो और दो का योग चार होता है।",
+    "marks": 2,
+    "negativeMarks": 0.5
+  }
+]

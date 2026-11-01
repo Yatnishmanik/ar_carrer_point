@@ -1,0 +1,213 @@
+@import "tailwindcss";
+
+/* Exam navigation uses the same status shapes in its legend and palette. */
+@layer components {
+.exam-badge {
+  position: relative;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: white;
+}
+.exam-badge--answered {
+  background: #58a82c;
+  clip-path: polygon(50% 0, 100% 20%, 100% 100%, 0 100%, 0 20%);
+}
+.exam-badge--unanswered {
+  background: #e85b2c;
+  clip-path: polygon(0 0, 100% 0, 100% 80%, 50% 100%, 0 80%);
+}
+.exam-badge--unvisited {
+  color: #475569;
+  background: linear-gradient(#fff, #e2e8f0);
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+}
+.exam-badge--review, .exam-badge--answered-review {
+  background: #8054a5;
+  border-radius: 50%;
+}
+.exam-badge-check {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid white;
+  background: #58a82c;
+  color: white;
+  font-size: 10px;
+}
+.exam-palette-button {
+  display: grid;
+  place-items: center;
+  padding: 3px;
+  border-radius: 5px;
+}
+.exam-palette-button--current, .exam-palette-button:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+.exam-primary-button, .exam-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.exam-primary-button {
+  border-color: #0284c7;
+  background: linear-gradient(#38a3dc, #1681b9);
+  color: white;
+}
+.exam-secondary-button { background: white; color: #334155; }
+.exam-primary-button:hover { filter: brightness(.95); }
+.exam-secondary-button:hover { background: #f8fafc; }
+.exam-primary-button:disabled, .exam-secondary-button:disabled, .exam-palette-button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+}
+
+:root {
+  --navy: #082f6b;
+  --navy-dark: #051e44;
+  --navy-deep: #03132c;
+  --blue: #0966df;
+  --blue-hover: #0b55bb;
+  --blue-light: #eff6ff;
+  --orange: #ff7a18;
+  --orange-hover: #ea6402;
+  --green: #10b981;
+  --green-light: #ecfdf5;
+  --red: #ef4444;
+  --red-light: #fef2f2;
+  --card-bg: #ffffff;
+  --surface: #f8fafc;
+  --border: #e2e8f0;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --shadow-sm: 0 1px 3px rgba(8, 47, 107, 0.05);
+  --shadow-md: 0 4px 16px rgba(8, 47, 107, 0.08);
+  --shadow-lg: 0 10px 30px rgba(8, 47, 107, 0.12);
+  --shadow-glow: 0 0 25px rgba(9, 102, 223, 0.25);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+  width: 100%;
+}
+
+body {
+  background-color: #f1f5f9;
+  color: var(--text-main);
+  font-family: var(--font-sans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow-x: hidden;
+  width: 100%;
+}
+
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Mobile Safe Area Padding */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Glassmorphism utility */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.glass-dark {
+  background: rgba(8, 47, 107, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Pulse animation for live badge */
+@keyframes pulseDot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+}
+
+.live-pulse {
+  animation: pulseDot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Floating animation */
+@keyframes floatGentle {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+.animate-float {
+  animation: floatGentle 4s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: floatGentle 4.5s ease-in-out 1.5s infinite;
+}

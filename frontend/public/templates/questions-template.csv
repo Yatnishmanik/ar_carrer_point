@@ -1,0 +1,3 @@
+﻿question,optionA,optionB,optionC,optionD,correctAnswer,subject,explanation,marks,negativeMarks
+"Which planet is known as the ""Red Planet""?",Earth,Mars,Jupiter,Saturn,B,Science,"Mars appears red because its surface contains iron oxide, also known as rust.",1,0.25
+2 + 2 का मान क्या है?,3,4,5,6,B,गणित,दो और दो का योग चार होता है।,2,0.5
